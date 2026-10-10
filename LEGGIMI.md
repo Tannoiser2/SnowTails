@@ -30,7 +30,7 @@ https://tannoiser2.github.io/SnowTails/). Usa lo stesso progetto Firebase di Ult
   finché non rientra.
 
 **Configurazione Firebase.** Le regole di sicurezza sono in `firebase/database.rules.json` e
-comprendono anche quelle di Ultimo chilometro (le stanze sotto `rooms`): vanno pubblicate nella
+comprendono anche quelle di Ultimo chilometro (`rooms`) e di STATUS (`status/rooms`): vanno pubblicate nella
 console di Firebase (Realtime Database → Regole) al posto delle precedenti. L'accesso *Anonimo* in
 Authentication è già attivo.
 
