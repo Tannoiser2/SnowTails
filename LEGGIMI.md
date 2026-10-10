@@ -10,6 +10,35 @@ vengono dalle tue scansioni: il progetto è per uso personale e non va distribui
 Il percorso **Rettilineo di prova** funziona subito. **The Nutcracker** diventa
 disponibile dopo aver mappato due facce (vedi sotto).
 
+## Gioco online
+Si gioca a distanza dal menu, riquadro **Online** (anche dalla versione web su GitHub Pages:
+https://tannoiser2.github.io/SnowTails/). Usa lo stesso progetto Firebase di Ultimo chilometro
+(Realtime Database, piano gratuito), con le stanze sotto `snowtails/rooms`.
+
+- **Chi crea la stanza** sceglie percorso e slitte come al solito: le slitte su *Persona* diventano i
+  posti per gli amici (la prima è la sua). Scrive il nome, preme *Crea una stanza* e comunica il codice
+  di 4 lettere. Quando ci sono tutti preme *Inizia la gara*: i posti rimasti liberi li guida la CPU.
+- **Gli amici** scrivono il nome e il codice e premono *Entra*.
+- Ognuno muove la sua slitta quando tocca a lui e vede solo la propria mano. Le slitte della CPU le
+  guida il dispositivo di chi ha creato la stanza, che deve restare collegato.
+- **Come funziona.** La partita è un registro di mosse numerate (`acts/0`, `acts/1`, …): partenza
+  scelta, carte giocate con la casella d'arrivo, carte scartate. Tutti i dispositivi applicano le stesse
+  mosse nello stesso ordine e, partendo dallo stesso seme casuale, mescolano i mazzi allo stesso modo:
+  sul database non passano mai le mani.
+- **Se cade la linea** si rientra con lo stesso codice e *Entra*: il gioco recupera velocemente le
+  mosse già giocate e riprende. Se un giocatore tace per un minuto, al suo posto guida il computer
+  finché non rientra.
+
+**Configurazione Firebase.** Le regole di sicurezza sono in `firebase/database.rules.json` e
+comprendono anche quelle di Ultimo chilometro (le stanze sotto `rooms`): vanno pubblicate nella
+console di Firebase (Realtime Database → Regole) al posto delle precedenti. L'accesso *Anonimo* in
+Authentication è già attivo.
+
+**Prove senza Firebase.** `tests/firebase_mock.py` è un finto Firebase locale. Con `ST_DB_URL`,
+`ST_AUTH_URL` e `ST_REFRESH_URL` che puntano lì, `tests/online_play.gd` fa giocare una gara intera a
+due istanze del gioco (`ST_ROLE=host` e `guest`; con `ST_PHASE=drop` e poi `back` l'ospite esce a metà
+e rientra) e alla fine ognuna stampa l'impronta della gara, che deve coincidere.
+
 ## Icona
 L'icona dell'app (il muso dell'husky dalla copertina) è in `assets/icon/`:
 - `icona.png` (1024×1024): icona del progetto, già impostata; va bene anche per macOS e per

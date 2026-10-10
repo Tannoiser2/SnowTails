@@ -42,8 +42,24 @@ var history: Array = []
 var start_record := {}
 var initial_saplings := {}
 var last_fx := {}           # effetti dell'ultima mossa, per il replay
+## Generatore casuale della partita: tutti i mescolamenti passano da qui. Online ogni dispositivo
+## parte dallo stesso seme, quindi i mazzi restano identici ovunque senza doverli trasmettere.
+var rng := RandomNumberGenerator.new()
 
-func setup(c: Course, ai_flags: Array) -> void:
+## Mescola un elenco con il generatore della partita (al posto di Array.shuffle, che usa quello globale).
+func shuffle(a: Array) -> void:
+	for i in range(a.size() - 1, 0, -1):
+		var j := rng.randi_range(0, i)
+		var t = a[i]
+		a[i] = a[j]
+		a[j] = t
+
+## seed_value 0 = partita qualunque; online tutti usano il seme scelto da chi ha creato la stanza.
+func setup(c: Course, ai_flags: Array, seed_value := 0) -> void:
+	if seed_value != 0:
+		rng.seed = seed_value
+	else:
+		rng.randomize()
 	course = c
 	players.clear()
 	for i in ai_flags.size():
@@ -71,7 +87,7 @@ func make_deck() -> Array:
 	for v in range(1, 6):
 		for k in 4:
 			d.append(v)
-	d.shuffle()
+	shuffle(d)
 	return d
 
 func cell(id: int) -> Dictionary:
@@ -148,7 +164,7 @@ func draw_up(p: Player) -> void:
 			p.deck = p.discard + p.used
 			p.discard = []
 			p.used = []
-			p.deck.shuffle()
+			shuffle(p.deck)
 			if p.deck.is_empty():
 				break
 		p.hand.append(p.deck.pop_back())
@@ -456,13 +472,23 @@ func ai_score(p: Player, m: Dictionary, o: Dictionary, n_cards: int) -> float:
 	return s + randf() * 3.0
 
 func ai_discard(p: Player) -> void:
-	while hand_size(p) > 5 and not p.hand.is_empty():
+	for v in ai_discard_values(p):
+		p.hand.erase(v)
+		p.discard.append(v)
+
+## Le carte che la CPU scarterebbe (senza toccare la mano): servono anche quando, online,
+## il computer prende il posto di un giocatore che si è scollegato.
+func ai_discard_values(p: Player) -> Array:
+	var hand: Array = p.hand.duplicate()
+	var out := []
+	while hand.size() + p.dents > 5 and not hand.is_empty():
 		var counts := {}
-		for v in p.hand:
+		for v in hand:
 			counts[v] = counts.get(v, 0) + 1
-		var bestv: int = p.hand[0]
+		var bestv: int = hand[0]
 		for v in counts.keys():
 			if counts[v] > counts[bestv] or (counts[v] == counts[bestv] and v > bestv):
 				bestv = v
-		p.hand.erase(bestv)
-		p.discard.append(bestv)
+		hand.erase(bestv)
+		out.append(bestv)
+	return out
