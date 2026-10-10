@@ -1,0 +1,15 @@
+{
+ "name": "Rettilineo di prova",
+ "note": "Solo rettilinei: funziona subito, senza tessere da mappare.",
+ "pieces": [
+  "start_p21",
+  "straight_p16a",
+  "straight_p14a",
+  "saplings_p17a",
+  "straight_p18b",
+  "snowdrift_p15a",
+  "straight_p16b",
+  "finish_p21",
+  "straight_p14b"
+ ]
+}

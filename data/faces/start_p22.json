@@ -1,0 +1,60 @@
+{
+ "id": "start_p22",
+ "image": "res://assets/tiles/start_p22.webp",
+ "img_scale": 1.5,
+ "size": [
+  366.0,
+  438.5
+ ],
+ "lane_width": 53.8,
+ "label": "Partenza (p.22)",
+ "type": "start",
+ "turn": "",
+ "limit": 0,
+ "entry": {
+  "mid": [
+   366.0,
+   211.0
+  ],
+  "dir": [
+   -1,
+   0
+  ]
+ },
+ "exit": {
+  "mid": [
+   0.0,
+   211.0
+  ],
+  "dir": [
+   -1,
+   0
+  ]
+ },
+ "cells": [
+  [
+   63.5,
+   103.4
+  ],
+  [
+   63.5,
+   157.2
+  ],
+  [
+   63.5,
+   211.0
+  ],
+  [
+   63.5,
+   264.8
+  ],
+  [
+   63.5,
+   318.6
+  ]
+ ],
+ "links": [],
+ "saplings": [],
+ "hints": [],
+ "mapped": true
+}

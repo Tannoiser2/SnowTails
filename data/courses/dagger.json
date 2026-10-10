@@ -1,0 +1,16 @@
+{
+ "name": "Dagger of the Mountain Troll",
+ "note": "Sequenza ricavata dal disegno del regolamento (pp.10-11): verificala sul tavolo e correggi l'elenco se serve.",
+ "pieces": [
+  "start_p21",
+  "straight_p16a",
+  "straight_p14a",
+  "uturn_L_p01",
+  "straight_p18b",
+  "corner_R_p08",
+  "saplings_p17a",
+  "corner_R_p08",
+  "finish_p21",
+  "straight_p16b"
+ ]
+}

@@ -1,0 +1,60 @@
+{
+ "id": "start_p21",
+ "image": "res://assets/tiles/start_p21.webp",
+ "img_scale": 1.5,
+ "size": [
+  371.0,
+  469.0
+ ],
+ "lane_width": 53.8,
+ "label": "Partenza (p.21)",
+ "type": "start",
+ "turn": "",
+ "limit": 0,
+ "entry": {
+  "mid": [
+   371.0,
+   238.0
+  ],
+  "dir": [
+   -1,
+   0
+  ]
+ },
+ "exit": {
+  "mid": [
+   0.0,
+   238.0
+  ],
+  "dir": [
+   -1,
+   0
+  ]
+ },
+ "cells": [
+  [
+   68.0,
+   345.6
+  ],
+  [
+   68.0,
+   291.8
+  ],
+  [
+   68.0,
+   238.0
+  ],
+  [
+   68.0,
+   184.2
+  ],
+  [
+   68.0,
+   130.4
+  ]
+ ],
+ "links": [],
+ "saplings": [],
+ "hints": [],
+ "mapped": true
+}

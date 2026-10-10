@@ -1,0 +1,8 @@
+.godot/
+*.tmp
+.DS_Store
+build/
+*.exe
+*.pck
+*.app/
+*.zip

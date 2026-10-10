@@ -1,0 +1,18 @@
+{
+ "name": "The Hobbit's Breakfast",
+ "note": "Sequenza ricavata dal disegno del regolamento (pp.10-11): verificala sul tavolo e correggi l'elenco se serve.",
+ "pieces": [
+  "start_p21",
+  "straight_p16a",
+  "straight_p14a",
+  "corner_L_p07",
+  "uturn_R_p02",
+  "straight_p18b",
+  "straight_p16b",
+  "uturn_L_p01",
+  "snowdrift_p15a",
+  "corner_R_p08",
+  "finish_p21",
+  "straight_p18a"
+ ]
+}

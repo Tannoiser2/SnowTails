@@ -1,0 +1,19 @@
+{
+ "name": "The Riddler",
+ "note": "Sequenza ricavata dal disegno del regolamento (pp.10-11): verificala sul tavolo e correggi l'elenco se serve.",
+ "pieces": [
+  "start_p22",
+  "straight_p16a",
+  "corner_R_p08",
+  "straight_p14a",
+  "corner_L_p07",
+  "saplings_p17a",
+  "corner_L_p07",
+  "straight_p18b",
+  "uturn_L_p01",
+  "corner_R_p08",
+  "snowdrift_p15b",
+  "finish_p21",
+  "straight_p16b"
+ ]
+}

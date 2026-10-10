@@ -1,0 +1,19 @@
+{
+ "name": "Bruce's Nightmare",
+ "note": "Sequenza ricavata dal disegno del regolamento (pp.10-11): verificala sul tavolo e correggi l'elenco se serve.",
+ "pieces": [
+  "start_p21",
+  "straight_p16a",
+  "corner_L_p07",
+  "straight_p14a",
+  "uturn_R_p02",
+  "corner_L_p07",
+  "straight_p18b",
+  "uturn_L_p01",
+  "corner_R_p08",
+  "chasm_p19a",
+  "straight_p16b",
+  "finish_p21",
+  "straight_p14b"
+ ]
+}

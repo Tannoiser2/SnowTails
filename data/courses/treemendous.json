@@ -1,0 +1,16 @@
+{
+ "name": "Treemendous",
+ "note": "Sequenza ricavata dal disegno del regolamento (pp.10-11): verificala sul tavolo e correggi l'elenco se serve.",
+ "pieces": [
+  "start_p22",
+  "straight_p16a",
+  "straight_p14a",
+  "corner_R_p08",
+  "saplings_p13b",
+  "corner_L_p07",
+  "saplings_p17a",
+  "uturn_R_p02",
+  "finish_p21",
+  "straight_p18b"
+ ]
+}
