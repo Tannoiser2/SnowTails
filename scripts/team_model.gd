@@ -11,6 +11,19 @@ var _shake := 0.0
 var _t := 0.0
 var _glb: Node3D = null   # modello importato (assets/models/team.glb), se presente
 const GLB_PATH := "res://assets/models/team.glb"
+## Versione animata: slitta e cani separati (sled.glb + husky.glb con scheletro).
+const SLED_PATH := "res://assets/models/sled.glb"
+const DOG_PATH := "res://assets/models/husky.glb"
+const DOG_SPOTS := [Vector3(-0.088, 0, -0.285), Vector3(0.088, 0, -0.30)]
+const TOW := Vector3(0.0, 0.1, 0.062)      # attacco della linea di traino sulla slitta
+const STRAP := Vector3(0.0, 0.1, 0.165)    # fine delle cinghie del cane (sul cane)
+var _rig: Node3D = null    # contenitore di slitta + cani
+var _sled_node: Node3D = null
+var _dogs: Array = []      # [nodo, AnimationPlayer, fase]
+var _ropes: Array = []
+var _bump := 0.0           # sobbalzo in corso della slitta
+var _bump_t := 0.0
+var _next_bump := 0.4
 static var _mats := {}
 
 static func mat(c: Color, rough := 0.85, emissive := false) -> StandardMaterial3D:
@@ -64,6 +77,9 @@ static func cyl(r_top: float, r_bot: float, h: float, seg := 8) -> CylinderMesh:
 	return c
 
 func build(team: Color) -> void:
+	if ResourceLoader.exists(SLED_PATH) and ResourceLoader.exists(DOG_PATH):
+		_build_animated(team)
+		return
 	if ResourceLoader.exists(GLB_PATH):
 		var ps = load(GLB_PATH)
 		if ps is PackedScene:
@@ -142,6 +158,86 @@ func _sled(team: Color) -> void:
 	for sx in [-1, 1]:
 		_part(caps(0.012, 0.09), team.darkened(0.15), Vector3(0.045 * sx, 0.18, -0.045), Vector3(-1.1, 0, 0), musher)
 
+func _build_animated(team: Color) -> void:
+	_rig = Node3D.new()
+	_rig.scale = Vector3.ONE * 0.9
+	add_child(_rig)
+	_sled_node = (load(SLED_PATH) as PackedScene).instantiate()
+	_rig.add_child(_sled_node)
+	var dog_scene := load(DOG_PATH) as PackedScene
+	var rope_mat := mat(Color("d9d4c7"), 0.9)
+	for i in DOG_SPOTS.size():
+		var d: Node3D = dog_scene.instantiate()
+		d.position = DOG_SPOTS[i]
+		_rig.add_child(d)
+		var ap := d.find_child("AnimationPlayer", true, false) as AnimationPlayer
+		if ap:
+			for n in ["run", "idle"]:
+				if ap.has_animation(n):
+					ap.get_animation(n).loop_mode = Animation.LOOP_LINEAR
+			ap.play("idle")
+			ap.seek(randf() * 1.5, true)
+		_dogs.append([d, ap, 0.13 * i + randf() * 0.05])
+		var rope := MeshInstance3D.new()
+		var cm := CylinderMesh.new()
+		cm.top_radius = 0.0045
+		cm.bottom_radius = 0.0045
+		cm.height = 1.0
+		cm.radial_segments = 5
+		cm.rings = 1
+		rope.mesh = cm
+		rope.material_override = rope_mat
+		rope.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+		_rig.add_child(rope)
+		_ropes.append(rope)
+	_base(team)
+
+## Linea di traino: un cilindro sottile tra la slitta e la fine delle cinghie del cane.
+func _update_ropes() -> void:
+	var a: Vector3 = _sled_node.position + _sled_node.basis * TOW
+	for i in _ropes.size():
+		var d: Node3D = _dogs[i][0]
+		var b: Vector3 = d.position + STRAP
+		var r: MeshInstance3D = _ropes[i]
+		var v := b - a
+		var l := v.length()
+		r.position = (a + b) * 0.5
+		var y := v / l
+		var x := y.cross(Vector3.FORWARD).normalized()
+		if x.length() < 0.5:
+			x = Vector3.RIGHT
+		r.basis = Basis(x, y * l, x.cross(y))
+
+func _process_animated(delta: float) -> void:
+	# cani: galoppo quando la slitta corre, fermi e scodinzolanti quando è ferma
+	for dd in _dogs:
+		var d: Node3D = dd[0]
+		var ap: AnimationPlayer = dd[1]
+		var ph: float = dd[2]
+		if ap:
+			var want := "run" if run > 0.15 else "idle"
+			if ap.current_animation != want:
+				ap.play(want, 0.25)
+				if want == "run":
+					ap.seek(ph, true)
+			ap.speed_scale = (0.75 + run * 0.6) if want == "run" else 1.0
+		# il corpo sale e scende due volte per falcata (12 fotogrammi a 24 fps = 0,5 s)
+		var gal := _t * TAU * 2.0 * (0.75 + run * 0.6) + ph * TAU * 2.0
+		d.position.y = DOG_SPOTS[_dogs.find(dd)].y + abs(sin(gal)) * 0.012 * run
+	# slitta: piccole vibrazioni continue + sobbalzi a intervalli casuali, più forti in corsa
+	_bump_t += delta
+	if run > 0.2 and _bump_t >= _next_bump:
+		_bump_t = 0.0
+		_next_bump = randf_range(0.25, 0.7)
+		_bump = max(_bump, randf_range(0.5, 1.0) * run)
+	_bump = max(0.0, _bump - delta * 3.5)
+	var jitter := (sin(_t * 23.0) * 0.6 + sin(_t * 37.0 + 1.3) * 0.4) * run
+	var hop := sin(min(1.0, 1.0 - _bump) * PI) * _bump
+	_sled_node.position.y = abs(jitter) * 0.004 + hop * 0.02
+	_sled_node.rotation.x = jitter * 0.012 + hop * 0.07
+	_sled_node.rotation.z = sin(_t * 9.0) * 0.012 * run + (sin(_t * 41.0) * 0.05 * hop)
+	_update_ropes()
+
 ## Basetta ovale nel colore della squadra, come per le miniature da tavolo.
 func _base(team: Color) -> void:
 	var rim := MeshInstance3D.new()
@@ -158,9 +254,12 @@ func _base(team: Color) -> void:
 	add_child(top)
 	if _glb:
 		_glb.position.y = 0.023
+	if _rig:
+		_rig.position.y = 0.023
 
 func shake(amount: float) -> void:
 	_shake = max(_shake, amount)
+	_bump = max(_bump, amount)
 
 func _process(delta: float) -> void:
 	_t += delta
@@ -171,6 +270,9 @@ func _process(delta: float) -> void:
 	elif rotation.z != 0.0 or rotation.x != 0.0:
 		rotation.z = 0.0
 		rotation.x = 0.0
+	if _rig:
+		_process_animated(delta)
+		return
 	if _glb:
 		var sp2 := 14.0
 		_glb.position.y = 0.023 + abs(sin(_t * sp2)) * 0.012 * run
