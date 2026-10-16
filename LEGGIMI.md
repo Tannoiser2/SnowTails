@@ -229,11 +229,14 @@ Limiti letti sui cartelli delle scansioni: curve 4, inversioni 3.
 ## Variante simultanea (personale)
 Nel menu, «Movimento: Simultaneo». A ogni giro tutti programmano la mossa (carte e casella
 d'arrivo): le CPU subito, le persone una alla volta, con una copertina fra l'una e l'altra
-se sullo stesso dispositivo ce n'è più d'una. Poi le slitte partono insieme, una casella
-per volta. Le rotte si calcolano senza le altre slitte e possono incrociarsi. Se due
-slitte finiscono sulla stessa casella la tiene chi era più avanti a inizio giro; l'altra si
-ferma una casella prima (e così via all'indietro), tampona e non pesca. Gli alberelli li
-travolge il primo che ci passa. Per ora solo nelle partite su un dispositivo, non online.
+se sullo stesso dispositivo ce n'è più d'una. Poi le slitte partono e arrivano insieme, in
+modo fluido: chi ha più caselle da fare va più veloce (entra nella casella k al tempo k/n).
+Due slitte non stanno mai nella stessa casella nello stesso momento. Si decide in
+quest'ordine: chi resta ferma, poi chi va più veloce, a parità chi era più avanti a inizio
+giro. Ognuna, se può, prende una rotta equivalente (stesso arrivo, stessa velocità, non più
+ammaccature) che evita il contatto; se non può, si ferma prima e prende mezza ammaccatura
+(due mezze fanno un'ammaccatura) e pesca normalmente. Gli alberelli li travolge chi ci passa
+per primo. Per ora solo nelle partite su un dispositivo, non online.
 
 ## Come funziona il movimento
 Ogni passo è «avanti» (un collegamento della rete) oppure «deriva» (una diagonale

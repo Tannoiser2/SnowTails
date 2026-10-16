@@ -413,7 +413,7 @@ func show_menu() -> void:
 		vrow.add_child(vb2)
 	right.add_child(vrow)
 	if sim_variant:
-		right.add_child(UIKit.label("Variante: tutti programmano la mossa, poi le slitte partono insieme. Se due finiscono sulla stessa casella, chi era dietro a inizio giro tampona. Solo per le partite su questo dispositivo.", 16, UIKit.MUTED))
+		right.add_child(UIKit.label("Variante: tutti programmano la mossa, poi le slitte partono insieme. Se due slitte non possono evitarsi, passa la più veloce e l'altra si ferma con mezza ammaccatura. Solo per le partite su questo dispositivo.", 16, UIKit.MUTED))
 	var acts := HBoxContainer.new()
 	acts.add_theme_constant_override("separation", 10)
 	var bmap := UIKit.button("Mappa le tessere")
@@ -596,7 +596,7 @@ func show_help() -> void:
 
 [b]Fine.[/b] Si corre finché tutte le slitte hanno tagliato il traguardo; chi è arrivato smette di muovere. In classifica conta prima il giro in cui si taglia il traguardo, poi, a parità di giro, chi è andato più lontano oltre la linea.
 
-[b]Variante simultanea.[/b] Se nel menu scegli «Simultaneo», a ogni giro tutti programmano la mossa (carte e casella d'arrivo) senza vedere quella degli altri, poi le slitte partono insieme. Le rotte non tengono conto delle altre slitte: si possono incrociare. Se due slitte finiscono sulla stessa casella, la tiene chi era più avanti a inizio giro; l'altra si ferma una casella prima, tampona e non pesca. Il bonus di equilibrio si calcola sulle posizioni di inizio giro.
+[b]Variante simultanea.[/b] Se nel menu scegli «Simultaneo», a ogni giro tutti programmano la mossa (carte e casella d'arrivo) senza vedere quella degli altri, poi le slitte partono insieme. Partono e arrivano tutte insieme, quindi chi ha più caselle da fare va più veloce. Due slitte non entrano mai nella stessa casella nello stesso momento: se possono, scelgono una rotta equivalente che evita il contatto; se non possono, entra chi va più veloce (a parità, chi era più avanti a inizio giro) e l'altra si ferma prima e prende mezza ammaccatura (due mezze fanno un'ammaccatura). Il bonus di equilibrio si calcola sulle posizioni di inizio giro.
 
 [b]Comandi.[/b] Un dito trascina la pista; due dita: avvicini o allontani, ruoti la vista e, spostandole insieme in su o in giù, cambi l'inclinazione. Col mouse: rotellina per lo zoom, tasto destro per ruotare e inclinare. «Segui» fa girare la telecamera nel senso di marcia della slitta di turno.
 
@@ -768,17 +768,9 @@ func _apply_choice(pend: Array, o: Dictionary) -> void:
 	board.destinations = []
 	_refresh()
 	await _pause(0.15)
-	var sap_hit: Array = o.get("sap", [])
-	var prev_c: int = start_cell
-	for t in o["path"]:
-		p.cell = t
-		board.focus_cell(t)
-		if sap_hit.has(t):
-			board.knock_sapling(t, (course.cells[t]["pos"] - course.cells[prev_c]["pos"]).normalized())
-			game.saplings.erase(t)
-		board.redraw()
-		prev_c = t
-		await _pause(BoardView3D.STEP_T)
+	var full := [start_cell]
+	full.append_array(o["path"])
+	await _drive([{"p": p, "full": full, "n": max(full.size() - 1, 1), "sap": o.get("sap", [])}], (full.size() - 1) * BoardView3D.STEP_T, true)
 	game.last_fx = _fx_of(p, o)
 	if _play_fx(game.last_fx):
 		await _pause(0.45)
@@ -884,7 +876,7 @@ func _play_fx(fx: Dictionary) -> bool:
 	if fx.is_empty():
 		return false
 	var crash := String(fx.get("crash", ""))
-	if (crash == "edge" or crash == "sled") and fx.has("dir"):
+	if (crash == "edge" or crash == "sled" or crash == "bump") and fx.has("dir"):
 		board.crash_fx(int(fx["cell"]), Vector2(fx["dir"][0], fx["dir"][1]), int(fx["pid"]), int(fx.get("other", -1)))
 		return true
 	if fx.get("skid", false):
@@ -1173,6 +1165,66 @@ func _submit_move(pend: Array, o: Dictionary) -> void:
 		return
 	_do_act(_move_act(pend, o), o)
 
+## Movimento fluido lungo i percorsi, senza soste fra una casella e l'altra.
+## items: [{p, full: [partenza, ...caselle], n, sap}]: la slitta raggiunge full[k] al tempo k/n
+## della durata (con n maggiore delle caselle fatte si ferma prima e aspetta).
+## follow: la telecamera segue la slitta (movimento singolo).
+func _drive(items: Array, dur: float, follow: bool) -> void:
+	var my := race_id
+	for it in items:
+		var pts := []
+		for c in it["full"]:
+			pts.append(BoardView3D.to3(course.cells[c]["pos"], 0.004))
+		it["pts"] = pts
+		it["last"] = 0
+		var p = it["p"]
+		var h: Vector2 = course.heading(int(it["full"][0]))
+		board.replay[p.id] = {"pos": pts[0], "dir": h, "run": 0.0}
+	if dur > 0.0 and not online.get("catchup", false):
+		var t := 0.0
+		while t < dur:
+			await get_tree().process_frame
+			if my != race_id:
+				return
+			t += get_process_delta_time()
+			var f: float = min(t / dur, 1.0)
+			for it in items:
+				var pts: Array = it["pts"]
+				var kmax: int = pts.size() - 1
+				var p = it["p"]
+				if kmax <= 0:
+					continue
+				var x: float = min(f * float(it["n"]), float(kmax))
+				var k: int = min(int(floor(x)), kmax - 1)
+				var u: float = x - k
+				var a: Vector3 = pts[k]
+				var b: Vector3 = pts[k + 1]
+				var dv := b - a
+				board.replay[p.id] = {"pos": a.lerp(b, u), "dir": Vector2(dv.x, dv.z).normalized(), "run": 1.0 if x < float(kmax) else 0.0}
+				var reach := int(floor(x + 0.0001))
+				while int(it["last"]) < reach:
+					it["last"] = int(it["last"]) + 1
+					_drive_cell(it, follow)
+	for it in items:
+		while int(it["last"]) < (it["full"] as Array).size() - 1:
+			it["last"] = int(it["last"]) + 1
+			_drive_cell(it, follow)
+		board.replay.erase(it["p"].id)
+	board.redraw()
+
+## La slitta è arrivata in una casella del percorso: posizione di gioco, alberelli, telecamera.
+func _drive_cell(it: Dictionary, follow: bool) -> void:
+	var k: int = it["last"]
+	var t: int = it["full"][k]
+	var p = it["p"]
+	p.cell = t
+	if (it["sap"] as Array).has(t) and game.saplings.has(t):
+		board.knock_sapling(t, (course.cells[t]["pos"] - course.cells[it["full"][k - 1]]["pos"]).normalized())
+		game.saplings.erase(t)
+	if follow:
+		board.focus_cell(t)
+	board.redraw()
+
 # ======================= VARIANTE SIMULTANEA =======================
 ## Un giro: tutti programmano (le CPU subito, le persone una alla volta), poi si muove insieme.
 func _sim_round() -> void:
@@ -1254,31 +1306,23 @@ func _sim_resolve(my: int) -> void:
 	board.current_id = -1
 	board.destinations = []
 	var pts := []
-	var maxlen := 0
 	for x in plan:
 		var pth: Array = x["o"]["path"]
-		maxlen = max(maxlen, pth.size())
 		pts.append(course.cells[x["start"]]["pos"])
 		for t in pth:
 			pts.append(course.cells[t]["pos"])
 	board.frame(pts)
 	_refresh()
 	await _pause(0.3)
-	for i in maxlen:
-		if my != race_id:
-			return
-		for x in plan:
-			var pth: Array = x["o"]["path"]
-			if i >= pth.size():
-				continue
-			var t: int = pth[i]
-			var prev: int = x["start"] if i == 0 else pth[i - 1]
-			x["p"].cell = t
-			if (x["o"]["sap"] as Array).has(t):
-				board.knock_sapling(t, (course.cells[t]["pos"] - course.cells[prev]["pos"]).normalized())
-				game.saplings.erase(t)
-		board.redraw()
-		await _pause(BoardView3D.STEP_T)
+	# tutti partono e arrivano insieme: chi ha più caselle da fare va più veloce
+	var items := []
+	var maxn := 0
+	for x in plan:
+		var full := [x["start"]]
+		full.append_array(x["o"]["path"])
+		items.append({"p": x["p"], "full": full, "n": int(x["o"]["n"]), "sap": x["o"]["sap"]})
+		maxn = max(maxn, int(x["o"]["n"]) if not (x["o"]["path"] as Array).is_empty() or x["o"]["half"] else 0)
+	await _drive(items, maxn * BoardView3D.STEP_T, false)
 	if my != race_id:
 		return
 	var any_fx := false
@@ -1384,6 +1428,8 @@ func _render_top() -> void:
 		var t: String = ("✕ " if p.wrecked else str(order.find(p) + 1) + " ") + p.name
 		if p.dents > 0:
 			t += "" + "▪".repeat(p.dents)
+		if p.half:
+			t += "▫"
 		if game.is_finished(p):
 			t += " 🏁"
 		var l := UIKit.label(t, 13, p.color.darkened(0.3))
@@ -1447,7 +1493,7 @@ func _stat_grid() -> GridContainer:
 	if d == 0 and cur.moves > 0 and speed > 0:
 		bonus = "+%d" % game.rank_of(cur)
 	g.add_child(_tile("Bonus", bonus))
-	g.add_child(_tile("Ammacc.", "%d / 4" % cur.dents, cur.dents >= 3))
+	g.add_child(_tile("Ammacc.", "%d%s / 4" % [cur.dents, "½" if cur.half else ""], cur.dents >= 3))
 	var nl := course.next_limit(float(c["s"]))
 	if not nl.is_empty():
 		var dist := int(round((float(nl["s"]) - float(c["s"])) / course.cell_len))

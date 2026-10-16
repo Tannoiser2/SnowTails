@@ -164,6 +164,7 @@ func _build_animated(team: Color) -> void:
 	add_child(_rig)
 	_sled_node = (load(SLED_PATH) as PackedScene).instantiate()
 	_rig.add_child(_sled_node)
+	_tint_sled(_sled_node, team)
 	var dog_scene := load(DOG_PATH) as PackedScene
 	var rope_mat := mat(Color("d9d4c7"), 0.9)
 	for i in DOG_SPOTS.size():
@@ -190,7 +191,41 @@ func _build_animated(team: Color) -> void:
 		rope.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_rig.add_child(rope)
 		_ropes.append(rope)
-	_base(team)
+
+## Colore della squadra sul conducente e sul pacco: si tingono le parti chiare e grigie della
+## texture (giaccone, pantaloni chiari, telo del carico); legno, pelle, pelliccia e cinghie
+## scure restano come sono.
+const TINT_SHADER := """
+shader_type spatial;
+uniform sampler2D tex : source_color, filter_linear_mipmap;
+uniform vec3 team : source_color;
+void fragment() {
+	vec3 c = texture(tex, UV).rgb;
+	float mx = max(c.r, max(c.g, c.b));
+	float mn = min(c.r, min(c.g, c.b));
+	float sat = (mx - mn) / max(mx, 0.0001);
+	float m = (1.0 - smoothstep(0.10, 0.22, sat)) * smoothstep(0.30, 0.50, mx);
+	vec3 tinted = team * (0.18 + 0.82 * mx);
+	ALBEDO = mix(c, tinted, m * 0.92);
+	ROUGHNESS = 0.85;
+}
+"""
+static var _tint_shader: Shader = null
+
+func _tint_sled(root: Node, team: Color) -> void:
+	for mi in root.find_children("*", "MeshInstance3D", true, false):
+		var m := mi as MeshInstance3D
+		var base := m.mesh.surface_get_material(0) as BaseMaterial3D if m.mesh and m.mesh.get_surface_count() > 0 else null
+		if base == null or base.albedo_texture == null:
+			continue
+		if _tint_shader == null:
+			_tint_shader = Shader.new()
+			_tint_shader.code = TINT_SHADER
+		var sm := ShaderMaterial.new()
+		sm.shader = _tint_shader
+		sm.set_shader_parameter("tex", base.albedo_texture)
+		sm.set_shader_parameter("team", team)
+		m.material_override = sm
 
 ## Linea di traino: un cilindro sottile tra la slitta e la fine delle cinghie del cane.
 func _update_ropes() -> void:
@@ -254,8 +289,6 @@ func _base(team: Color) -> void:
 	add_child(top)
 	if _glb:
 		_glb.position.y = 0.023
-	if _rig:
-		_rig.position.y = 0.023
 
 func shake(amount: float) -> void:
 	_shake = max(_shake, amount)

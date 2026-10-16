@@ -45,7 +45,7 @@ var _mid_y := 0.0
 var _t := 0.0
 
 ## Tempo di ogni passo durante il movimento delle slitte (secondi per casella).
-const STEP_T := 0.4
+const STEP_T := 0.35
 
 static func to3(v: Vector2, y := 0.0) -> Vector3:
 	return Vector3(v.x * S, y, v.y * S)

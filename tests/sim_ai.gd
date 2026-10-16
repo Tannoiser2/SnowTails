@@ -33,9 +33,9 @@ func _init() -> void:
 	var g2 = main.game
 	for r in g2.history:
 		for mv in r:
-			if mv.get("fx", {}).get("crash", "") == "sled":
+			if mv.get("fx", {}).get("crash", "") in ["sled", "bump"]:
 				crashes += 1
-	print("SIM simultanea: finita=", g2.over, " giri=", g2.round_n, " sovrapposizioni=", clashes, " tamponamenti=", crashes)
+	print("SIM simultanea: finita=", g2.over, " giri=", g2.round_n, " sovrapposizioni=", clashes, " frenate con mezza ammaccatura=", crashes)
 	for r in g2.results:
 		print("  ", r["p"].name, ": ", r["st"])
 	quit()

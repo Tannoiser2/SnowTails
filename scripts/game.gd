@@ -21,6 +21,7 @@ class Player:
 	var lc := false
 	var rc := false
 	var dents := 0
+	var half := false          # mezza ammaccatura (variante simultanea): due mezze fanno una intera
 	var cell := -1
 	var wrecked := false
 	var moves := 0
@@ -161,6 +162,14 @@ func add_dent(p: Player, n: int) -> void:
 			return
 		p.dents += 1
 
+## Mezza ammaccatura: la seconda mezza diventa un'ammaccatura intera.
+func add_half_dent(p: Player) -> void:
+	if p.half:
+		p.half = false
+		add_dent(p, 1)
+	else:
+		p.half = true
+
 func draw_up(p: Player) -> void:
 	while hand_size(p) < 5:
 		if p.deck.is_empty():
@@ -276,56 +285,152 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 			_dfs(t, steps - 1, nd, dir, total, occ, p2, cd2, res, bonus_n, s2)
 
 ## Variante simultanea: dalle mosse programmate (pid -> {pend, o}) ricava gli esiti reali.
-## Si procede da chi era più avanti a inizio giro: ognuno prende la sua casella d'arrivo;
-## se è già presa da chi era davanti, la slitta si ferma una casella prima (e così via all'indietro)
-## e conta come tamponamento: niente carte pescate, come nelle regole normali.
-## Gli alberelli li travolge il primo che ci passa; chi passa dopo trova la strada libera.
+## Le slitte si muovono insieme per tutta la durata del giro: chi ha n caselle da fare entra
+## nella casella k al tempo k/n. Due slitte non possono stare nella stessa casella nello stesso
+## momento. Si decide in quest'ordine: prima chi resta ferma (non può spostarsi), poi chi va più
+## veloce, a parità chi era più avanti a inizio giro. Ognuna, se può, sceglie fra le rotte
+## equivalenti (stessa casella d'arrivo, stessa velocità, non più ammaccature) una che non tocca
+## nessuno; se non c'è, si ferma prima del contatto e prende mezza ammaccatura.
+## Gli alberelli li travolge chi ci passa per primo.
 func resolve_simultaneous(progs: Dictionary) -> Array:
-	var taken := {}
-	var knocked := {}
-	var plan := []
+	var list := []
 	for p in race_order():
-		if not racing(p) or not progs.has(p.id):
-			continue
-		var pr: Dictionary = progs[p.id]
-		var o: Dictionary = (pr["o"] as Dictionary).duplicate(true)
-		var full := [p.cell]
-		full.append_array(o["path"])
-		var k := full.size() - 1
+		if racing(p) and progs.has(p.id):
+			list.append(p)
+	var rank := {}
+	for i in list.size():
+		rank[list[i].id] = i
+	var cands := {}
+	for p in list:
+		var o0: Dictionary = progs[p.id]["o"]
+		var lst := [o0]
+		if not (o0["path"] as Array).is_empty():
+			var m := mat_after(p, progs[p.id]["pend"])
+			for o in compute_outs(p, m, true):
+				if lst.size() >= 60:
+					break
+				if int(o["end"]) == int(o0["end"]) and int(o["speed"]) == int(o0["speed"]) and o["bonus"] == o0["bonus"] \
+						and int(o["dents"]) <= int(o0["dents"]) and str(o["path"]) != str(o0["path"]) and String(o["crash"]) == String(o0["crash"]):
+					lst.append(o)
+		cands[p.id] = lst
+	var prio := list.duplicate()
+	prio.sort_custom(func(a, b):
+		var sa: int = 1000 if (progs[a.id]["o"]["path"] as Array).is_empty() else int(progs[a.id]["o"]["speed"])
+		var sb: int = 1000 if (progs[b.id]["o"]["path"] as Array).is_empty() else int(progs[b.id]["o"]["speed"])
+		if sa != sb:
+			return sa > sb
+		return rank[a.id] < rank[b.id])
+	var fixed := []          # [{cell, a, b, pid}]
+	var done := {}
+	for p in prio:
+		var lst: Array = cands[p.id]
+		var o0: Dictionary = lst[0]
+		var n: int = max((o0["path"] as Array).size(), 1)
+		var best = null
+		var best_sc := INF
+		for i in lst.size():
+			var o: Dictionary = lst[i]
+			var tl := _timeline(p.id, [p.cell] + o["path"], n, (o["path"] as Array).size())
+			if _clash(tl, fixed) >= 0:
+				continue
+			# a parità, meglio non intralciare le rotte di chi deve ancora decidere
+			var sc := 0.0 if i == 0 else 0.25
+			for q in prio:
+				if q != p and not done.has(q.id):
+					var qo: Dictionary = progs[q.id]["o"]
+					var qn: int = max((qo["path"] as Array).size(), 1)
+					if _clash(_timeline(q.id, [q.cell] + qo["path"], qn, (qo["path"] as Array).size()), tl) >= 0:
+						sc += 1.0
+			if sc < best_sc:
+				best_sc = sc
+				best = o
+		var o_use: Dictionary
+		var half := false
+		var yield_pid := -1
 		var hit := -1
-		while k > 0 and taken.has(full[k]):
-			hit = full[k]
-			k -= 1
-		var path: Array = full.slice(1, k + 1)
-		var total := int(o["speed"])
+		if best != null:
+			o_use = (best as Dictionary).duplicate(true)
+		else:
+			o_use = o0.duplicate(true)
+			var full: Array = [p.cell] + o_use["path"]
+			var k: int = full.size() - 1
+			while k > 0:
+				var c := _clash(_timeline(p.id, full, n, k), fixed)
+				if c < 0:
+					break
+				if k == full.size() - 1 or yield_pid < 0:
+					yield_pid = int(fixed[c]["pid"])
+				k -= 1
+			hit = full[k + 1] if k + 1 < full.size() else -1
+			o_use["path"] = full.slice(1, k + 1)
+			half = true
+		var path: Array = o_use["path"]
+		var total := int(o_use["speed"])
 		var cd := 0
 		var prev: int = p.cell
 		for t in path:
 			cd += course.limit_dents(cell(prev)["piece"], cell(t)["piece"], total) + course.leap_dents(prev, t, total)
 			prev = t
+		o_use["end"] = p.cell if path.is_empty() else path[path.size() - 1]
+		o_use["from"] = p.cell
+		o_use["corner_dents"] = cd
+		o_use["half"] = half
+		o_use["n"] = n
+		if half:
+			o_use["crash"] = "bump"
+			if hit >= 0:
+				o_use["hit_cell"] = hit
+				o_use["hit_dir"] = (cell(hit)["pos"] - cell(o_use["end"])["pos"]).normalized()
+			if yield_pid >= 0:
+				o_use["yield_to"] = players[yield_pid].name
+		fixed.append_array(_timeline(p.id, [p.cell] + path, n, path.size()))
+		done[p.id] = {"p": p, "pend": progs[p.id]["pend"], "o": o_use, "start": p.cell, "n": n}
+	# alberelli: li prende chi ci arriva per primo
+	var first := {}
+	for pid in done:
+		var x: Dictionary = done[pid]
+		var pth: Array = x["o"]["path"]
+		for k in pth.size():
+			var t: int = pth[k]
+			if saplings.has(t):
+				var tm: float = float(k + 1) / float(x["n"])
+				if not first.has(t) or tm < first[t][0] or (tm == first[t][0] and rank[pid] < rank[first[t][1]]):
+					first[t] = [tm, pid]
+	var plan := []
+	for p in list:
+		var x: Dictionary = done[p.id]
+		var o: Dictionary = x["o"]
 		var sap := []
-		for t in path:
-			if saplings.has(t) and not knocked.has(t):
+		for t in o["path"]:
+			if first.has(t) and int(first[t][1]) == p.id:
 				sap.append(t)
-				knocked[t] = true
-		var crash := String(o["crash"])
-		if hit >= 0:
-			crash = "sled"
-			o["hit_cell"] = hit
-			o["hit_dir"] = (cell(hit)["pos"] - cell(full[k])["pos"]).normalized()
-		elif crash == "sled":
-			# rotta calcolata senza le altre slitte: qui "sled" non può comparire, ma per sicurezza
-			crash = ""
-		o["path"] = path
-		o["end"] = full[k]
-		o["from"] = p.cell
-		o["crash"] = crash
-		o["corner_dents"] = cd
 		o["sap"] = sap
-		o["dents"] = cd + sap.size() + (1 if crash == "edge" else 0)
-		taken[full[k]] = p.id
-		plan.append({"p": p, "pend": pr["pend"], "o": o, "start": p.cell})
+		o["dents"] = int(o["corner_dents"]) + sap.size() + (1 if String(o["crash"]) == "edge" else 0)
+		plan.append(x)
 	return plan
+
+## Occupazione nel tempo (giro da 0 a 1): la slitta entra nella casella k di full al tempo k/n
+## e la lascia quando entra nella successiva; nell'ultima casella raggiunta (stop) resta per sempre.
+## La casella di partenza si libera subito, tranne per chi non si muove.
+func _timeline(pid: int, full: Array, n: int, stop: int) -> Array:
+	var tl := []
+	if stop <= 0:
+		tl.append({"cell": full[0], "a": 0.0, "b": INF, "pid": pid})
+		return tl
+	for k in range(1, stop + 1):
+		var a := float(k) / float(n)
+		var b: float = INF if k == stop else float(k + 1) / float(n)
+		tl.append({"cell": full[k], "a": a, "b": b, "pid": pid})
+	return tl
+
+## Indice in other del primo intervallo che si sovrappone a tl (stessa casella, stesso momento), o -1.
+func _clash(tl: Array, other: Array) -> int:
+	for x in tl:
+		for i in other.size():
+			var y: Dictionary = other[i]
+			if int(y["cell"]) == int(x["cell"]) and max(float(x["a"]), float(y["a"])) < min(float(x["b"]), float(y["b"])) - 0.000001:
+				return i
+	return -1
 
 func describe(pend: Array, o: Dictionary, m: Dictionary) -> String:
 	var v: int = pend[0]["v"]
@@ -367,8 +472,12 @@ func after_move(p: Player, o: Dictionary) -> bool:
 		msgs.append("urta il bordo (+1)")
 	if o["crash"] == "sled":
 		msgs.append("tampona e non pesca")
+	if o.get("half", false):
+		msgs.append("frena per non urtare %s (+½)" % String(o.get("yield_to", "un'altra slitta")))
 	if o["dents"] > 0:
 		add_dent(p, o["dents"])
+	if o.get("half", false) and not p.wrecked:
+		add_half_dent(p)
 	if p.wrecked:
 		msgs.append("la slitta va in pezzi!")
 	elif is_finished(p) and p.finish_round == 0:
