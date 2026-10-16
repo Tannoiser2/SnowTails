@@ -45,6 +45,9 @@ var last_fx := {}           # effetti dell'ultima mossa, per il replay
 ## Generatore casuale della partita: tutti i mescolamenti passano da qui. Online ogni dispositivo
 ## parte dallo stesso seme, quindi i mazzi restano identici ovunque senza doverli trasmettere.
 var rng := RandomNumberGenerator.new()
+## Variante: tutti programmano la mossa, poi le slitte si muovono insieme.
+## Le rotte si calcolano senza tener conto delle altre slitte; i conflitti si risolvono dopo.
+var simultaneous := false
 
 ## Mescola un elenco con il generatore della partita (al posto di Array.shuffle, che usa quello globale).
 func shuffle(a: Array) -> void:
@@ -205,7 +208,7 @@ func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 	var dir := signi(drift)
 	var k: int = min(abs(drift), speed)
 	var occ := {}
-	for q in players:
+	for q in ([] if simultaneous else players):
 		# le slitte già arrivate restano parcheggiate oltre la linea ma non ostacolano chi arriva dopo
 		if q != p and not q.wrecked and q.cell >= 0 and q.finish_round == 0:
 			occ[q.cell] = true
@@ -271,6 +274,58 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 				s2 = sap.duplicate()
 				s2.append(t)
 			_dfs(t, steps - 1, nd, dir, total, occ, p2, cd2, res, bonus_n, s2)
+
+## Variante simultanea: dalle mosse programmate (pid -> {pend, o}) ricava gli esiti reali.
+## Si procede da chi era più avanti a inizio giro: ognuno prende la sua casella d'arrivo;
+## se è già presa da chi era davanti, la slitta si ferma una casella prima (e così via all'indietro)
+## e conta come tamponamento: niente carte pescate, come nelle regole normali.
+## Gli alberelli li travolge il primo che ci passa; chi passa dopo trova la strada libera.
+func resolve_simultaneous(progs: Dictionary) -> Array:
+	var taken := {}
+	var knocked := {}
+	var plan := []
+	for p in race_order():
+		if not racing(p) or not progs.has(p.id):
+			continue
+		var pr: Dictionary = progs[p.id]
+		var o: Dictionary = (pr["o"] as Dictionary).duplicate(true)
+		var full := [p.cell]
+		full.append_array(o["path"])
+		var k := full.size() - 1
+		var hit := -1
+		while k > 0 and taken.has(full[k]):
+			hit = full[k]
+			k -= 1
+		var path: Array = full.slice(1, k + 1)
+		var total := int(o["speed"])
+		var cd := 0
+		var prev: int = p.cell
+		for t in path:
+			cd += course.limit_dents(cell(prev)["piece"], cell(t)["piece"], total) + course.leap_dents(prev, t, total)
+			prev = t
+		var sap := []
+		for t in path:
+			if saplings.has(t) and not knocked.has(t):
+				sap.append(t)
+				knocked[t] = true
+		var crash := String(o["crash"])
+		if hit >= 0:
+			crash = "sled"
+			o["hit_cell"] = hit
+			o["hit_dir"] = (cell(hit)["pos"] - cell(full[k])["pos"]).normalized()
+		elif crash == "sled":
+			# rotta calcolata senza le altre slitte: qui "sled" non può comparire, ma per sicurezza
+			crash = ""
+		o["path"] = path
+		o["end"] = full[k]
+		o["from"] = p.cell
+		o["crash"] = crash
+		o["corner_dents"] = cd
+		o["sap"] = sap
+		o["dents"] = cd + sap.size() + (1 if crash == "edge" else 0)
+		taken[full[k]] = p.id
+		plan.append({"p": p, "pend": pr["pend"], "o": o, "start": p.cell})
+	return plan
 
 func describe(pend: Array, o: Dictionary, m: Dictionary) -> String:
 	var v: int = pend[0]["v"]

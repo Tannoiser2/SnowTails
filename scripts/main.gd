@@ -38,6 +38,10 @@ var setup_n := 4
 var _preview_sig := ""
 var show_paths := false        # anteprima dei percorsi mentre si scelgono le carte
 var setup_ai := [false, true, true, true, true]
+## Variante personale: programmazione e movimento simultanei (solo partite su questo dispositivo).
+var sim_variant := false
+signal sim_step
+var sim_progs := {}
 var course_files: Array = []
 var course_idx := 0
 
@@ -172,6 +176,7 @@ func _build_hud() -> void:
 	modal_layer.layer = 5
 	add_child(modal_layer)
 	get_viewport().size_changed.connect(_apply_layout)
+	get_viewport().size_changed.connect(func(): if _modal_panel: _fit_modal.call_deferred())
 	_apply_layout()
 
 ## Telefono: interfaccia grande; tablet e computer: più compatta, così resta spazio per la pista.
@@ -269,25 +274,51 @@ func _modal(content: Control, max_w := 700.0, cover := false) -> void:
 	dim.color = Color(0.03, 0.07, 0.12, 0.35 if cover else 0.55)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	modal_root.add_child(dim)
-	var sc := ScrollContainer.new()
-	sc.set_anchors_preset(Control.PRESET_FULL_RECT)
-	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-	modal_root.add_child(sc)
-	var center := MarginContainer.new()
-	center.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	var vw := get_viewport().get_visible_rect().size.x
-	var mx := int(max(24.0, (vw - max_w) * 0.5))
-	center.add_theme_constant_override("margin_left", mx)
-	center.add_theme_constant_override("margin_right", mx)
-	center.add_theme_constant_override("margin_top", 24)
-	center.add_theme_constant_override("margin_bottom", 24)
-	sc.add_child(center)
 	var p := UIKit.panel(Color(1, 1, 1, 0.96), 26)
-	p.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	center.add_child(p)
+	modal_root.add_child(p)
 	p.add_child(content)
+	p.modulate.a = 0.0      # compare solo quando è già della misura giusta
+	_modal_panel = p
+	_modal_w = max_w
+	_fit_modal()
+
+var _modal_panel: Control = null
+var _modal_w := 700.0
+var _fit_gen := 0
+
+## La finestra deve stare tutta nello schermo: se il contenuto è più alto, prima la si allarga
+## (il testo va a capo meno), poi la si rimpicciolisce in proporzione. Niente scorrimento.
+func _fit_modal() -> void:
+	if _modal_panel == null:
+		return
+	_fit_gen += 1
+	var gen := _fit_gen
+	var p := _modal_panel
+	var sc := 1.0
+	for it in 4:
+		if not is_instance_valid(p) or p != _modal_panel or gen != _fit_gen:
+			return
+		var vs := get_viewport().get_visible_rect().size
+		var avail := vs - Vector2(28, 28)
+		var w: float = min(_modal_w, avail.x)
+		if sc < 1.0:
+			w = min(_modal_w * 1.35, avail.x / sc)
+		p.size = Vector2(w, 0)
+		await get_tree().process_frame
+		if not is_instance_valid(p) or p != _modal_panel or gen != _fit_gen:
+			return
+		var h: float = p.get_combined_minimum_size().y
+		p.size = Vector2(w, h)
+		var s2: float = clamp(min(avail.y / h, avail.x / w), 0.4, 1.0)
+		p.scale = Vector2(s2, s2)
+		p.position = ((vs - Vector2(w, h) * s2) * 0.5).floor()
+		p.modulate.a = 1.0
+		if abs(s2 - sc) < 0.01:
+			break
+		sc = s2
 
 func _close_modal() -> void:
+	_modal_panel = null
 	if modal_root:
 		modal_root.queue_free()
 		modal_root = null
@@ -364,6 +395,25 @@ func show_menu() -> void:
 	_menu_rows = VBoxContainer.new()
 	_menu_rows.add_theme_constant_override("separation", 6)
 	right.add_child(_menu_rows)
+	# variante personale: programmazione e movimento simultanei
+	var vrow := HBoxContainer.new()
+	vrow.add_theme_constant_override("separation", 8)
+	var vl := UIKit.label("Movimento", 20)
+	vl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	vl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	vrow.add_child(vl)
+	for opt in [[false, "A turni"], [true, "Simultaneo"]]:
+		var vb2 := UIKit.button(opt[1], sim_variant == opt[0])
+		vb2.custom_minimum_size = Vector2(130, 48)
+		vb2.size_flags_horizontal = 0
+		vb2.pressed.connect(func():
+			sim_variant = opt[0]
+			show_menu())
+		vrow.add_child(vb2)
+	right.add_child(vrow)
+	if sim_variant:
+		right.add_child(UIKit.label("Variante: tutti programmano la mossa, poi le slitte partono insieme. Se due finiscono sulla stessa casella, chi era dietro a inizio giro tampona. Solo per le partite su questo dispositivo.", 16, UIKit.MUTED))
 	var acts := HBoxContainer.new()
 	acts.add_theme_constant_override("separation", 10)
 	var bmap := UIKit.button("Mappa le tessere")
@@ -377,9 +427,11 @@ func show_menu() -> void:
 	_menu_start = UIKit.button("Inizia la gara", true)
 	_menu_start.pressed.connect(_menu_start_pressed)
 	acts.add_child(_menu_start)
-	right.add_child(_online_box())
+	var online_box := _online_box()
 	var root_box: BoxContainer
 	if land:
+		# in orizzontale l'online va a sinistra, sotto i pulsanti: le due colonne restano equilibrate
+		_menu_preview.custom_minimum_size = Vector2(0, 230)
 		root_box = HBoxContainer.new()
 		root_box.add_theme_constant_override("separation", 36)
 		root_box.add_child(left)
@@ -387,7 +439,9 @@ func show_menu() -> void:
 		right.add_child(_menu_preview)
 		right.move_child(_menu_preview, 0)
 		left.add_child(acts)
+		left.add_child(online_box)
 	else:
+		right.add_child(online_box)
 		root_box = VBoxContainer.new()
 		root_box.add_theme_constant_override("separation", 14)
 		left.add_child(_menu_preview)
@@ -542,14 +596,30 @@ func show_help() -> void:
 
 [b]Fine.[/b] Si corre finché tutte le slitte hanno tagliato il traguardo; chi è arrivato smette di muovere. In classifica conta prima il giro in cui si taglia il traguardo, poi, a parità di giro, chi è andato più lontano oltre la linea.
 
+[b]Variante simultanea.[/b] Se nel menu scegli «Simultaneo», a ogni giro tutti programmano la mossa (carte e casella d'arrivo) senza vedere quella degli altri, poi le slitte partono insieme. Le rotte non tengono conto delle altre slitte: si possono incrociare. Se due slitte finiscono sulla stessa casella, la tiene chi era più avanti a inizio giro; l'altra si ferma una casella prima, tampona e non pesca. Il bonus di equilibrio si calcola sulle posizioni di inizio giro.
+
 [b]Comandi.[/b] Un dito trascina la pista; due dita: avvicini o allontani, ruoti la vista e, spostandole insieme in su o in giù, cambi l'inclinazione. Col mouse: rotellina per lo zoom, tasto destro per ruotare e inclinare. «Segui» fa girare la telecamera nel senso di marcia della slitta di turno.
 
 [b]Tastiera.[/b] 1–5 sceglie una carta di quel valore; A, S, D (o frecce sinistra, giù, destra) la mettono su cane sinistro, freno, cane destro; Invio muove; Backspace riprende le carte; Esc torna indietro o apre il menu. Tocca una carta e poi uno spazio della plancia; poi «Muovi» e tocca la destinazione."""
-	vb.add_child(r)
+	if _is_landscape():
+		# in orizzontale due colonne: il testo sta tutto nella finestra senza rimpicciolirsi troppo
+		var paras: PackedStringArray = r.text.split("\n\n")
+		var half := int(ceil(paras.size() / 2.0))
+		var cols := HBoxContainer.new()
+		cols.add_theme_constant_override("separation", 28)
+		for part in [paras.slice(0, half), paras.slice(half)]:
+			var rc := UIKit.rich(21)
+			rc.add_theme_color_override("default_color", UIKit.INK)
+			rc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			rc.text = "\n\n".join(part)
+			cols.add_child(rc)
+		vb.add_child(cols)
+	else:
+		vb.add_child(r)
 	var b := UIKit.button("Chiudi", true)
 	b.pressed.connect(_close_modal)
 	vb.add_child(b)
-	_modal(vb)
+	_modal(vb, 1180.0 if _is_landscape() else 700.0)
 
 # ======================= PARTITA =======================
 func start_game() -> void:
@@ -578,6 +648,7 @@ func _begin_race(def: Dictionary, ai_flags: Array, seed_value: int, names := {})
 	_close_modal()
 	game = SledGame.new()
 	game.setup(course, ai_flags, seed_value)
+	game.simultaneous = sim_variant and online.is_empty()
 	for k in names:
 		var idx := int(k)
 		if idx < game.players.size():
@@ -631,6 +702,9 @@ func _take_slot(k: int) -> void:
 	_next_slot()
 
 func _begin_round() -> void:
+	if game.simultaneous:
+		_sim_round()
+		return
 	game.order = game.race_order()
 	game.oi = 0
 	_next_turn()
@@ -704,7 +778,7 @@ func _apply_choice(pend: Array, o: Dictionary) -> void:
 			game.saplings.erase(t)
 		board.redraw()
 		prev_c = t
-		await _pause(0.17)
+		await _pause(BoardView3D.STEP_T)
 	game.last_fx = _fx_of(p, o)
 	if _play_fx(game.last_fx):
 		await _pause(0.45)
@@ -872,7 +946,7 @@ func start_replay() -> void:
 				lens.append(lens[k - 1] + (pts[k] as Vector3).distance_to(pts[k - 1]))
 			paths.append({"mv": mv, "pts": pts, "lens": lens})
 		board.frame(pts_all, 3.6)      # solo se «Segui» è attivo
-		var dur := 1.8
+		var dur := 2.8
 		var t: float = max(replay_carry, 0.0)
 		replay_carry = 0.0
 		while t < dur:
@@ -991,7 +1065,7 @@ func _on_board_tap(w: Vector2) -> void:
 				bd = d
 				best = i
 		if best >= 0:
-			_do_act(_move_act(pending, outs[best]), outs[best])
+			_submit_move(pending, outs[best])
 
 func _tap_card(i: int) -> void:
 	if phase == "discard":
@@ -1048,8 +1122,9 @@ func _confirm() -> void:
 		return
 	var m := game.mat_after(cur, pending)
 	outs = game.compute_outs(cur, m)
-	if outs.size() == 1 and outs[0]["path"].is_empty() and outs[0]["dents"] == 0:
-		_do_act(_move_act(pending, outs[0]), outs[0])
+	# una sola casella d'arrivo possibile (tipico nei rettilinei): si parte subito, senza chiedere
+	if outs.size() == 1:
+		_submit_move(pending, outs[0])
 		return
 	phase = "dest"
 	board.destinations = []
@@ -1082,6 +1157,165 @@ func _back_to_cards() -> void:
 	outs = []
 	board.destinations = []
 	_refresh()
+
+## La mossa scelta da una persona: nel gioco normale parte subito, nella variante simultanea
+## resta in attesa finché tutti hanno programmato.
+func _submit_move(pend: Array, o: Dictionary) -> void:
+	if game.simultaneous:
+		sim_progs[cur.id] = {"pend": pend.duplicate(true), "o": o}
+		pending = []
+		sel = -1
+		outs = []
+		board.destinations = []
+		phase = "simwait"
+		_refresh()
+		sim_step.emit()
+		return
+	_do_act(_move_act(pend, o), o)
+
+# ======================= VARIANTE SIMULTANEA =======================
+## Un giro: tutti programmano (le CPU subito, le persone una alla volta), poi si muove insieme.
+func _sim_round() -> void:
+	var my := race_id
+	game.order = game.race_order()
+	sim_progs = {}
+	var humans := 0
+	for p in game.order:
+		if game.racing(p) and not p.ai:
+			humans += 1
+	for p in game.order.duplicate():
+		if my != race_id or game.over:
+			return
+		if not game.racing(p):
+			continue
+		cur = p
+		pending = []
+		sel = -1
+		outs = []
+		board.destinations = []
+		if p.hand.is_empty():
+			var c0: int = p.cell
+			game.add_dent(p, 1)
+			game.record(p, c0, [], [])
+			game.log_text = "[b]%s[/b] non ha carte cane: prende un'ammaccatura" % p.name
+			if p.wrecked:
+				_refresh()
+				await _pause(0.9)
+				continue
+			game.draw_up(p)
+		if p.ai:
+			var ch := game.ai_choose(p)
+			sim_progs[p.id] = {"pend": ch["pend"], "o": ch["o"]}
+			continue
+		if humans > 1:
+			await _sim_curtain(p)
+			if my != race_id:
+				return
+		board.focus_cell(p.cell)
+		phase = "cards"
+		_refresh()
+		await sim_step
+		if my != race_id:
+			return
+	await _sim_resolve(my)
+
+## Più persone sullo stesso dispositivo: una copertina fra un giocatore e l'altro, così nessuno sbircia.
+func _sim_curtain(p) -> void:
+	cur = p
+	phase = "simwait"
+	_refresh()
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	vb.add_child(UIKit.label("Tocca a %s" % p.name, 40, p.color.darkened(0.2)))
+	vb.add_child(UIKit.label("Programma la tua mossa. Gli altri non guardino: le mosse si scoprono quando le slitte partono.", 21, UIKit.MUTED))
+	var b := UIKit.button("Sono pronto", true)
+	b.pressed.connect(func():
+		_close_modal()
+		sim_step.emit())
+	vb.add_child(b)
+	_modal(vb, 620, true)
+	await sim_step
+
+## Tutte le slitte si muovono insieme, una casella per volta; poi urti, ammaccature e carte.
+func _sim_resolve(my: int) -> void:
+	cur = null
+	phase = "anim"
+	var plan := game.resolve_simultaneous(sim_progs)
+	sim_progs = {}
+	var lines := []
+	for x in plan:
+		var p = x["p"]
+		if (x["pend"] as Array).is_empty():
+			lines.append("[b]%s[/b] resta ferma" % p.name)
+		else:
+			lines.append("[b]%s[/b]: %s" % [p.name, game.describe(x["pend"], x["o"], game.mat_after(p, x["pend"]))])
+		game.commit_play(p, x["pend"])
+	game.log_text = "Si parte tutti insieme!"
+	board.current_id = -1
+	board.destinations = []
+	var pts := []
+	var maxlen := 0
+	for x in plan:
+		var pth: Array = x["o"]["path"]
+		maxlen = max(maxlen, pth.size())
+		pts.append(course.cells[x["start"]]["pos"])
+		for t in pth:
+			pts.append(course.cells[t]["pos"])
+	board.frame(pts)
+	_refresh()
+	await _pause(0.3)
+	for i in maxlen:
+		if my != race_id:
+			return
+		for x in plan:
+			var pth: Array = x["o"]["path"]
+			if i >= pth.size():
+				continue
+			var t: int = pth[i]
+			var prev: int = x["start"] if i == 0 else pth[i - 1]
+			x["p"].cell = t
+			if (x["o"]["sap"] as Array).has(t):
+				board.knock_sapling(t, (course.cells[t]["pos"] - course.cells[prev]["pos"]).normalized())
+				game.saplings.erase(t)
+		board.redraw()
+		await _pause(BoardView3D.STEP_T)
+	if my != race_id:
+		return
+	var any_fx := false
+	for x in plan:
+		x["fx"] = _fx_of(x["p"], x["o"])
+		if _play_fx(x["fx"]):
+			any_fx = true
+	if any_fx:
+		await _pause(0.6)
+	# esiti nell'ordine di gara di inizio giro
+	var need := []
+	for i in plan.size():
+		var x: Dictionary = plan[i]
+		game.log_text = ""
+		game.last_fx = x["fx"]
+		if game.after_move(x["p"], x["o"]):
+			need.append(x["p"])
+		game.record(x["p"], x["start"], x["o"]["path"], x["o"].get("sap", []))
+		lines[i] += game.log_text
+	game.log_text = "  ·  ".join(lines)
+	board.redraw()
+	_refresh()
+	for p in need:
+		cur = p
+		phase = "discard"
+		disc_buf = []
+		_refresh()
+		await sim_step
+		if my != race_id:
+			return
+	await _pause(0.6)
+	if my != race_id:
+		return
+	if game.check_round_end():
+		_show_results()
+	else:
+		_begin_round()
 
 # ======================= RENDER =======================
 func _refresh() -> void:
@@ -1250,6 +1484,9 @@ func _action_text() -> String:
 			return "Tocca un cerchio sulla pista per scegliere la partenza (4ª e 5ª: carte in più)."
 		"slotsAI":
 			return "Le slitte si schierano…"
+		"cards":
+			if game.simultaneous and cur != null:
+				return "[b]%s[/b], programma la mossa: quando tutti hanno scelto, le slitte partono insieme." % cur.name
 		"dest":
 			return "Tocca sulla pista la casella d'arrivo ([b]−n[/b] ammaccature, [b]+B[/b] bonus)."
 		"discard":
@@ -1335,7 +1572,7 @@ func _render_bottom() -> void:
 			sel = -1
 			_refresh())
 		row.add_child(b1)
-		var b2 := UIKit.button("Muovi la slitta", true)
+		var b2 := UIKit.button("Programma" if game.simultaneous else "Muovi la slitta", true)
 		b2.custom_minimum_size = Vector2(0, 44)
 		b2.add_theme_font_size_override("font_size", 17)
 		b2.disabled = pending.is_empty()
@@ -1564,7 +1801,10 @@ func _apply_act(a: Dictionary, o = null, local_done := false) -> void:
 						cur.hand.erase(vi)
 						cur.discard.append(vi)
 			disc_buf = []
-			_end_turn()
+			if game.simultaneous:
+				sim_step.emit()
+			else:
+				_end_turn()
 
 ## Rimette in mano le carte scartate a metà (se nel frattempo la mossa l'ha fatta il computer).
 func _undo_discard() -> void:

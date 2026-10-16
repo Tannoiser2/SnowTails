@@ -226,6 +226,15 @@ taglia il traguardo, poi, a parità di giro, chi è andato più lontano oltre la
 
 Limiti letti sui cartelli delle scansioni: curve 4, inversioni 3.
 
+## Variante simultanea (personale)
+Nel menu, «Movimento: Simultaneo». A ogni giro tutti programmano la mossa (carte e casella
+d'arrivo): le CPU subito, le persone una alla volta, con una copertina fra l'una e l'altra
+se sullo stesso dispositivo ce n'è più d'una. Poi le slitte partono insieme, una casella
+per volta. Le rotte si calcolano senza le altre slitte e possono incrociarsi. Se due
+slitte finiscono sulla stessa casella la tiene chi era più avanti a inizio giro; l'altra si
+ferma una casella prima (e così via all'indietro), tampona e non pesca. Gli alberelli li
+travolge il primo che ci passa. Per ora solo nelle partite su un dispositivo, non online.
+
 ## Come funziona il movimento
 Ogni passo è «avanti» (un collegamento della rete) oppure «deriva» (una diagonale
 calcolata: circa una casella avanti e una corsia di lato rispetto alla direzione di
@@ -234,6 +243,7 @@ arrivo possibile.
 
 ## Test senza grafica
     godot --headless --path . -s res://tests/run_ai.gd -- res://data/courses/prova.json
+    godot --headless --path . -s res://tests/sim_ai.gd      # variante simultanea, sole CPU
 
 ## Non ancora fatto
 - Le altre facce delle curve (pp.3-6, 9-12): i percorsi usano solo p.1, 2, 7, 8.

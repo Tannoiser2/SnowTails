@@ -44,6 +44,9 @@ var _twist := 0.0
 var _mid_y := 0.0
 var _t := 0.0
 
+## Tempo di ogni passo durante il movimento delle slitte (secondi per casella).
+const STEP_T := 0.4
+
 static func to3(v: Vector2, y := 0.0) -> Vector3:
 	return Vector3(v.x * S, y, v.y * S)
 
@@ -619,7 +622,8 @@ func _process(delta: float) -> void:
 			var dd := to_goal.length()
 			var moving := dd > 0.02
 			if moving:
-				node.position = node.position.move_toward(goal, delta * 7.0)
+				# passo costante: una casella ogni STEP_T secondi (un po' di margine per le diagonali)
+				node.position = node.position.move_toward(goal, delta * max(course.cell_len * S / STEP_T * 1.25, dd * 2.5))
 				var want := -atan2(to_goal.x, -to_goal.z)
 				node.rotation.y = lerp_angle(node.rotation.y, want, 1.0 - exp(-12.0 * delta))
 			else:
