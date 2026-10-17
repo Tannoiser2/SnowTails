@@ -82,7 +82,7 @@ static func _tex(path: String) -> Texture2D:
 	return t
 
 func _draw() -> void:
-	draw_style_box(UIKit.box(Color("7f93a6"), 16), Rect2(Vector2.ZERO, size))
+	draw_style_box(UIKit.box(Color("8fb2cf"), 16, Color("ffffff", 0.8), 2), Rect2(Vector2.ZERO, size))
 	if _pieces.is_empty():
 		if message != "":
 			var font := ThemeDB.fallback_font

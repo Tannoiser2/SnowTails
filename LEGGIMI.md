@@ -253,3 +253,7 @@ arrivo possibile.
 - Editor di percorsi dentro il gioco, stagione a punti.
 
 `tools/build_faces.py` è lo script Python che ha estratto le facce dalle scansioni.
+
+## Font
+Titoli e pulsanti principali: Luckiest Guy (Apache 2.0). Testo: Nunito (SIL Open Font
+License). Le licenze sono in `assets/fonts/`.

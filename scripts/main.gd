@@ -66,6 +66,7 @@ func _ready() -> void:
 		if DisplayServer.get_name() != "headless" and get_window().mode == Window.MODE_WINDOWED:
 			get_window().mode = Window.MODE_MAXIMIZED
 	_apply_ui_scale()
+	get_tree().root.theme = UIKit.make_theme()
 	board = BoardView3D.new()
 	add_child(board)
 	board.tapped.connect(_on_board_tap)
@@ -107,7 +108,7 @@ func _build_hud() -> void:
 	lsp.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	lsp.mouse_filter = Control.MOUSE_FILTER_IGNORE
 	land_left.add_child(lsp)
-	side_panel = UIKit.panel(Color(1, 1, 1, 0.97), 0)
+	side_panel = UIKit.panel(Color(UIKit.PANEL, 0.96), 0)
 	side_panel.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	land_box.add_child(side_panel)
 	side_inner = VBoxContainer.new()
@@ -248,8 +249,8 @@ func _apply_layout() -> void:
 		portrait_box.add_child(bottom_panel)
 		bottom_panel.size_flags_vertical = Control.SIZE_FILL
 		bottom_box.size_flags_vertical = Control.SIZE_FILL
-		(top_panel as PanelContainer).add_theme_stylebox_override("panel", UIKit.box(Color(1, 1, 1, 0.94), 0, Color(0, 0, 0, 0), 0, 18))
-		(bottom_panel as PanelContainer).add_theme_stylebox_override("panel", UIKit.box(Color.WHITE, 26, Color(0, 0, 0, 0), 0, 18))
+		(top_panel as PanelContainer).add_theme_stylebox_override("panel", UIKit.box(Color(UIKit.PANEL, 0.95), 0, Color(0, 0, 0, 0), 0, 18))
+		(bottom_panel as PanelContainer).add_theme_stylebox_override("panel", UIKit.box(Color(UIKit.PANEL, 0.98), 26, Color(0, 0, 0, 0), 0, 18))
 		land_box.visible = false
 		portrait_box.visible = true
 	if modal_root and (phase == "menu" or game == null):
@@ -271,11 +272,17 @@ func _modal(content: Control, max_w := 700.0, cover := false) -> void:
 		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_COVERED
 		modal_root.add_child(tr)
 	var dim := ColorRect.new()
-	dim.color = Color(0.03, 0.07, 0.12, 0.35 if cover else 0.55)
+	dim.color = Color(0.04, 0.12, 0.22, 0.30 if cover else 0.5)
 	dim.set_anchors_preset(Control.PRESET_FULL_RECT)
 	modal_root.add_child(dim)
-	var p := UIKit.panel(Color(1, 1, 1, 0.96), 26)
+	# nevicata dietro la finestra
+	var vsz := get_viewport().get_visible_rect().size
+	modal_root.add_child(SnowFx.snowfall(vsz, 160 if cover else 90))
+	var p := UIKit.frost_panel(26)
+	(p.get_theme_stylebox("panel") as StyleBoxFlat).content_margin_top = 30
 	modal_root.add_child(p)
+	_modal_cap = SnowFx.SnowCap.new()
+	modal_root.add_child(_modal_cap)
 	p.add_child(content)
 	p.modulate.a = 0.0      # compare solo quando è già della misura giusta
 	_modal_panel = p
@@ -283,6 +290,7 @@ func _modal(content: Control, max_w := 700.0, cover := false) -> void:
 	_fit_modal()
 
 var _modal_panel: Control = null
+var _modal_cap: Control = null
 var _modal_w := 700.0
 var _fit_gen := 0
 
@@ -313,6 +321,12 @@ func _fit_modal() -> void:
 		p.scale = Vector2(s2, s2)
 		p.position = ((vs - Vector2(w, h) * s2) * 0.5).floor()
 		p.modulate.a = 1.0
+		if is_instance_valid(_modal_cap):
+			# il cumulo di neve segue il bordo superiore della finestra
+			_modal_cap.w = w
+			_modal_cap.scale = Vector2(s2, s2)
+			_modal_cap.position = p.position + Vector2(0, 3) * s2
+			_modal_cap.queue_redraw()
 		if abs(s2 - sc) < 0.01:
 			break
 		sc = s2
@@ -361,12 +375,13 @@ func show_menu() -> void:
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 14)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_child(UIKit.label("Snow Tails", 44))
+	left.add_child(UIKit.title("Snow Tails", 58))
 	left.add_child(UIKit.label("Corsa di slitte con le tessere della tua copia. Uso personale.", 20, UIKit.MUTED))
-	left.add_child(UIKit.label("Percorso", 24))
+	left.add_child(UIKit.heading("Percorso"))
 	var ob := OptionButton.new()
 	ob.custom_minimum_size = Vector2(0, 60)
 	ob.add_theme_font_size_override("font_size", 22)
+	UIKit.style_option(ob)
 	for i in course_files.size():
 		var c := Course.new()
 		var ok := c.load_file(course_files[i])
@@ -388,7 +403,7 @@ func show_menu() -> void:
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 10)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.add_child(UIKit.label("Slitte", 24))
+	right.add_child(UIKit.heading("Slitte"))
 	_menu_count = HBoxContainer.new()
 	_menu_count.add_theme_constant_override("separation", 8)
 	right.add_child(_menu_count)
@@ -398,7 +413,7 @@ func show_menu() -> void:
 	# variante personale: programmazione e movimento simultanei
 	var vrow := HBoxContainer.new()
 	vrow.add_theme_constant_override("separation", 8)
-	var vl := UIKit.label("Movimento", 20)
+	var vl := UIKit.heading("Movimento")
 	vl.autowrap_mode = TextServer.AUTOWRAP_OFF
 	vl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	vl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -424,7 +439,7 @@ func show_menu() -> void:
 		CourseEditor.start_from = course_files[course_idx] if course_idx < course_files.size() else ""
 		get_tree().change_scene_to_file("res://scenes/course_editor.tscn"))
 	acts.add_child(bed)
-	_menu_start = UIKit.button("Inizia la gara", true)
+	_menu_start = UIKit.cta("Inizia la gara")
 	_menu_start.pressed.connect(_menu_start_pressed)
 	acts.add_child(_menu_start)
 	var online_box := _online_box()
@@ -583,7 +598,7 @@ func _menu_rebuild_players() -> void:
 func show_help() -> void:
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
-	vb.add_child(UIKit.label("Come si gioca", 36))
+	vb.add_child(UIKit.title("Come si gioca", 42))
 	var r := UIKit.rich(21)
 	r.add_theme_color_override("default_color", UIKit.INK)
 	r.text = """[b]La slitta.[/b] Due cani e un freno, tutti a 3 all'inizio. Velocità = cane sinistro + cane destro − freno. Deriva = differenza fra i cani: ti sposti in diagonale verso il cane più forte (mai più della velocità), nei passi che scegli tu.
@@ -811,7 +826,7 @@ func _show_results() -> void:
 	_refresh()
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
-	vb.add_child(UIKit.label("Classifica", 40))
+	vb.add_child(UIKit.title("Classifica", 48))
 	vb.add_child(UIKit.label("Dopo %d giri" % game.round_n, 20, UIKit.MUTED))
 	var i := 0
 	for r in game.results:
@@ -852,7 +867,7 @@ func _show_results() -> void:
 	var b1 := UIKit.button("Guarda la pista")
 	b1.pressed.connect(_close_modal)
 	acts.add_child(b1)
-	var b2 := UIKit.button("Nuova gara", true)
+	var b2 := UIKit.cta("Nuova gara")
 	b2.pressed.connect(show_menu)
 	acts.add_child(b2)
 	vb.add_child(acts)
@@ -1278,9 +1293,9 @@ func _sim_curtain(p) -> void:
 	_refresh()
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 14)
-	vb.add_child(UIKit.label("Tocca a %s" % p.name, 40, p.color.darkened(0.2)))
+	vb.add_child(UIKit.title("Tocca a %s" % p.name, 48, p.color.lightened(0.15)))
 	vb.add_child(UIKit.label("Programma la tua mossa. Gli altri non guardino: le mosse si scoprono quando le slitte partono.", 21, UIKit.MUTED))
-	var b := UIKit.button("Sono pronto", true)
+	var b := UIKit.cta("Sono pronto")
 	b.pressed.connect(func():
 		_close_modal()
 		sim_step.emit())
@@ -1618,7 +1633,7 @@ func _render_bottom() -> void:
 			sel = -1
 			_refresh())
 		row.add_child(b1)
-		var b2 := UIKit.button("Programma" if game.simultaneous else "Muovi la slitta", true)
+		var b2 := UIKit.cta("Programma" if game.simultaneous else "Muovi la slitta")
 		b2.custom_minimum_size = Vector2(0, 44)
 		b2.add_theme_font_size_override("font_size", 17)
 		b2.disabled = pending.is_empty()
@@ -1947,7 +1962,7 @@ func _heartbeat(my: int) -> void:
 func _online_box() -> VBoxContainer:
 	var v := VBoxContainer.new()
 	v.add_theme_constant_override("separation", 8)
-	v.add_child(UIKit.label("Online", 24))
+	v.add_child(UIKit.heading("Online"))
 	var ses := _net().load_session()
 	_on_name = _line_edit("il tuo nome", 20)
 	_on_name.text = str(ses.get("name", ""))
