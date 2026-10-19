@@ -34,6 +34,7 @@ var _rebuild_at := -1.0
 var _course: Course = null
 
 func _ready() -> void:
+	UIKit.setup_fonts()
 	get_tree().root.theme = UIKit.make_theme()
 	var bg := ColorRect.new()
 	bg.color = Color("dfe7ee")
@@ -81,6 +82,7 @@ func _ready() -> void:
 	name_edit.add_theme_font_size_override("font_size", 16)
 	name_edit.custom_minimum_size = Vector2(0, 36)
 	name_edit.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	UIKit.touch_text(name_edit, "Nome del percorso")
 	nr.add_child(name_edit)
 	start_pick = OptionButton.new()
 	start_pick.custom_minimum_size = Vector2(150, 36)

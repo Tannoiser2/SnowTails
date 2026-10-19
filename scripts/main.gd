@@ -66,6 +66,7 @@ func _ready() -> void:
 		if DisplayServer.get_name() != "headless" and get_window().mode == Window.MODE_WINDOWED:
 			get_window().mode = Window.MODE_MAXIMIZED
 	_apply_ui_scale()
+	UIKit.setup_fonts()
 	get_tree().root.theme = UIKit.make_theme()
 	board = BoardView3D.new()
 	add_child(board)
@@ -1519,7 +1520,7 @@ func _render_top() -> void:
 		if p.half:
 			t += "▫"
 		if game.is_finished(p):
-			t += " 🏁"
+			t += " ✓"
 		var l := UIKit.label(t, 13, p.color.darkened(0.3))
 		l.autowrap_mode = TextServer.AUTOWRAP_OFF
 		pc.add_child(l)
@@ -2116,6 +2117,7 @@ func _line_edit(ph: String, maxlen: int) -> LineEdit:
 	le.add_theme_stylebox_override("focus", UIKit.box(Color.WHITE, 12, UIKit.ACCENT, 2, 12))
 	le.add_theme_color_override("font_color", UIKit.INK)
 	le.add_theme_color_override("font_placeholder_color", UIKit.MUTED)
+	UIKit.touch_text(le, ph.capitalize())
 	return le
 
 func _on_text(t: String) -> void:

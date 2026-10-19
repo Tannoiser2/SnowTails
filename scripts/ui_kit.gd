@@ -22,10 +22,53 @@ const F_BLACK := "res://assets/fonts/Nunito-900.woff2"
 const F_TITLE := "res://assets/fonts/LuckiestGuy.woff2"
 static var _fonts := {}
 
+const F_SYMBOLS := "res://assets/fonts/NotoSansSymbols2.woff2"   # ★ ✓ ✎ ⚠ ✕ ▪ ▫ •
+const F_MATH := "res://assets/fonts/NotoSansMath.woff2"         # ← → e altri segni
+
 static func font(path: String) -> Font:
 	if not _fonts.has(path):
-		_fonts[path] = load(path) if ResourceLoader.exists(path) else ThemeDB.fallback_font
+		var f: Font = load(path) if ResourceLoader.exists(path) else ThemeDB.fallback_font
+		_add_fallbacks(f)
+		_fonts[path] = f
 	return _fonts[path]
+
+## I font del testo hanno solo le lettere: frecce, stelle, spunte e simili si prendono dai font
+## di simboli. Sul computer ci pensa il sistema, ma nel browser (iPad compreso) senza questi
+## ripieghi comparirebbero i codici dei caratteri.
+static func _add_fallbacks(f: Font) -> void:
+	if not (f is FontFile):
+		return
+	var fb: Array[Font] = []
+	for p in [F_SYMBOLS, F_MATH]:
+		if ResourceLoader.exists(p):
+			fb.append(load(p))
+	if not fb.is_empty() and (f as FontFile).fallbacks.is_empty():
+		(f as FontFile).fallbacks = fb
+
+## Da chiamare all'avvio di ogni scena: aggiunge i ripieghi anche al font predefinito del
+## progetto (quello di Label3D e dei controlli senza font proprio).
+static func setup_fonts() -> void:
+	for p in [F_BODY, F_BOLD, F_BLACK, F_TITLE]:
+		font(p)
+	var d := ThemeDB.fallback_font
+	_add_fallbacks(d)
+
+## Campo di testo su tablet e telefono nel browser: la tastiera virtuale non si apre da sola,
+## quindi al tocco si apre la finestra di inserimento del sistema (con la sua tastiera).
+static func touch_text(le: LineEdit, title: String) -> void:
+	if not OS.has_feature("web"):
+		return
+	le.focus_entered.connect(func():
+		if not DisplayServer.is_touchscreen_available():
+			return
+		var r = JavaScriptBridge.eval("window.prompt(%s, %s)" % [JSON.stringify(title), JSON.stringify(le.text)], true)
+		if r != null and typeof(r) == TYPE_STRING:
+			var t: String = r
+			if le.max_length > 0:
+				t = t.substr(0, le.max_length)
+			le.text = t
+			le.text_changed.emit(t)
+		le.release_focus())
 
 ## Tema di tutto il gioco: font, campi di testo, menu a tendina, barre di scorrimento.
 static func make_theme() -> Theme:

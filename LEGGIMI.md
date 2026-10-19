@@ -256,7 +256,12 @@ arrivo possibile.
 
 ## Font
 Titoli e pulsanti principali: Luckiest Guy (Apache 2.0). Testo: Nunito (SIL Open Font
-License). Le licenze sono in `assets/fonts/`.
+License). Simboli (frecce, stella, spunta, matita…): Noto Sans Symbols 2 e Noto Sans Math
+(SIL Open Font License), usati come ripiego: nel browser, iPad compreso, non ci sono i font
+di sistema. Le licenze sono in `assets/fonts/`.
+
+Sui tablet e sui telefoni, nel browser, toccando un campo di testo (nome della pista, nome e
+codice per l'online) si apre la finestra di inserimento del sistema con la sua tastiera.
 
 ## Caratteristiche fanmade
 La pista corre su un argine di neve con i declivi ai lati e qualche abete sui pendii

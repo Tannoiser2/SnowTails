@@ -42,6 +42,7 @@ var _moved := false
 var _pinch := 0.0
 
 func _ready() -> void:
+	UIKit.setup_fonts()
 	sprite = Sprite2D.new()
 	sprite.centered = false
 	add_child(sprite)
