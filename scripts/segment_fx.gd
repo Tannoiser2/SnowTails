@@ -39,6 +39,13 @@ static func build(parent: Node3D, c: Course) -> void:
 				_ice(parent, c, pi)
 			"hut":
 				_hut(parent, c, pi)
+			"fork":
+				_fork(parent, c, pi)
+		# cumuli di neve fresca su qualunque tessera ne abbia (neve fresca, bivio)
+		for id in pc["cells"]:
+			if c.fresh.has(id):
+				_mounds(parent, c, pi)
+				break
 
 # ---------- materiali ----------
 static func _flake_mat(alpha := 0.9) -> StandardMaterial3D:
@@ -157,7 +164,11 @@ static func _fresh(parent: Node3D, c: Course, pi: int) -> void:
 	fall.color_ramp = _fade_ramp(1.0)
 	fall.local_coords = true
 	root.add_child(fall)
-	# cumuli di neve fresca sulle caselle segnate: piccoli rilievi morbidi che sfumano nella pista
+
+
+## Cumuli di neve fresca sulle caselle segnate: piccoli rilievi morbidi che sfumano nella pista.
+static func _mounds(parent: Node3D, c: Course, pi: int) -> void:
+	var f := frame(c, pi)
 	var m := StandardMaterial3D.new()
 	m.vertex_color_use_as_albedo = true
 	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
@@ -251,6 +262,31 @@ static func _ice(parent: Node3D, c: Course, pi: int) -> void:
 	gl.color_ramp = g
 	gl.local_coords = true
 	root.add_child(gl)
+
+# ---------- bivio: abeti sull'isola di neve in mezzo alla pista ----------
+static func _fork(parent: Node3D, c: Course, pi: int) -> void:
+	var pc: Dictionary = c.pieces[pi]
+	var xf: Transform2D = pc["xf"]
+	var models := []
+	for k in [1, 2]:
+		var path := "res://assets/models/sapling%s.glb" % ("" if k == 1 else "_%d" % k)
+		if ResourceLoader.exists(path):
+			models.append(load(path))
+	if models.is_empty():
+		return
+	var i := 0
+	for pt in pc["face"].get("island", []):
+		var at := xf * FaceDB.v2(pt)
+		for off in [-0.25, 0.25]:
+			var t: Node3D = (models[i % models.size()] as PackedScene).instantiate()
+			BoardView3D._vertex_color_material(t)
+			t.scale = Vector3.ONE * (1.1 + 0.25 * float(i % 3) / 2.0)
+			var d: Vector2 = pc["exit_mid"] - pc["entry_mid"]
+			var p2: Vector2 = at + d.normalized() * c.cell_len * off
+			t.position = BoardView3D.to3(p2, 0.0)
+			t.rotation.y = float(i) * 1.7
+			parent.add_child(t)
+			i += 1
 
 # ---------- baita ----------
 static func _hut(parent: Node3D, c: Course, pi: int) -> void:

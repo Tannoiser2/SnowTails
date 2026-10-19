@@ -258,11 +258,20 @@ arrivo possibile.
 Titoli e pulsanti principali: Luckiest Guy (Apache 2.0). Testo: Nunito (SIL Open Font
 License). Le licenze sono in `assets/fonts/`.
 
-## Segmenti fanmade (anteprima grafica)
-`tools/make_fan_tiles.py` crea i segmenti partendo dai rettilinei scansionati: cartelli
-all'ingresso nello stile delle curve (disco bordato di rosso, doppia linea rossa) e ritocchi
-dipinti (ghiaccio, tracce in salita, solchi in discesa, sastrugi del vento). Il resto è 3D:
-salite e discese alzano davvero la pista (le slitte si inclinano), vento con scie e neve
-sollevata e una manica a vento animata, neve fresca con nevicata e cumuli, ghiaccio lucido
-con luccichii, baita (modello Meshy) con il fumo dal camino. Pista di prova: «Fanmade:
-vento, ghiaccio e pendii». Per ora è solo l'aspetto: le regole dei segmenti verranno dopo.
+## Segmenti fanmade
+Tessere ricavate dai rettilinei scansionati (`tools/make_fan_tiles.py`), con cartelli
+all'ingresso nello stile delle curve ed effetti 3D. Regole:
+- **Salita**: chi ci passa fa al massimo 4 punti di movimento.
+- **Discesa**: chi parte in discesa va almeno a 5, anche frenando.
+- **Neve fresca**: ogni casella coi cumuli costa 2 punti.
+- **Ghiaccio**: chi entra derivando continua a derivare finché è sul ghiaccio; a fine
+  movimento si scivola avanti di una casella.
+- **Vento** (→ o ←): ogni 2 caselle percorse sulla tessera sposta di una corsia nel verso
+  della manica a vento; contro il bordo è un'ammaccatura.
+- **Baita**: chi si ferma sulla casella accanto ripara un'ammaccatura (o una mezza), ma non pesca.
+- **Bivio**: un'isola di abeti chiude la corsia di mezzo; da una parte neve fresca, dall'altra alberelli.
+
+Si trovano nell'editor (gruppo «Fanmade», segnati con ★), nella pista casuale (opzione
+«Fanmade») e nella pista «Fanmade: vento, ghiaccio e pendii». La CPU li gestisce (le regole
+sono dentro il calcolo dei percorsi; la baita la cerca quando ha ammaccature).
+Test: `tests/fan_rules.gd` (una verifica per regola), `tests/gen_fan.gd` (piste casuali).

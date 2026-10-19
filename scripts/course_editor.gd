@@ -12,6 +12,7 @@ const PALETTE := [
 	["Curve", [["Curva sinistra", "corner_L_p07"], ["Curva destra", "corner_R_p08"]]],
 	["Inversioni", [["Inversione sinistra", "uturn_L_p01"], ["Inversione destra", "uturn_R_p02"]]],
 	["Arrivo", [["Arrivo", "finish_p21"]]],
+	["Fanmade", [["Salita", "fan_up"], ["Discesa", "fan_down"], ["Ghiaccio", "fan_ice"], ["Vento →", "fan_wind"], ["Vento ←", "fan_wind_l"], ["Neve fresca", "fan_fresh"], ["Baita", "fan_hut"], ["Bivio", "fan_fork"]]],
 ]
 const POOLS := {
 	"@straight": ["straight_p16a", "straight_p14a", "straight_p18b", "straight_p16b", "straight_p14b", "straight_p18a", "straight_p13a", "straight_p20b", "straight_p19b", "straight_p20a"],
@@ -211,6 +212,8 @@ func _label_of(fid: String) -> String:
 		"finish": return "Arrivo"
 		"corner": return "Curva " + ("a sinistra" if String(f.get("turn", "")) == "L" else "a destra")
 		"uturn": return "Inversione " + ("a sinistra" if String(f.get("turn", "")) == "L" else "a destra")
+	if f.get("fanmade", false):
+		return String(f.get("label", fid)).replace(" (fanmade)", "") + " ★"
 	match String(f.get("special", "")):
 		"saplings": return "Alberelli"
 		"snowdrift": return "Cumulo di neve"

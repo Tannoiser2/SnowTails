@@ -108,6 +108,7 @@ func build(def: Dictionary) -> bool:
 			corners.append({"piece": pi, "turn": turn})
 	_estimate_cell_len()
 	_compute_heights()
+	_compute_sideways()
 	# giunzioni fra tessere
 	for pi in range(1, pieces.size()):
 		_join(pi - 1, pi)
@@ -144,6 +145,37 @@ func build(def: Dictionary) -> bool:
 		error = "Il percorso non ha la tessera d'arrivo"
 		return false
 	return true
+
+## Segmento fanmade della tessera di una casella ("" per le tessere normali).
+func seg_of(id: int) -> String:
+	return String(pieces[int(cells[id]["piece"])]["seg"])
+
+## Vento della tessera di una casella: +1 spinge a destra, -1 a sinistra, 0 niente vento.
+func wind_of(id: int) -> int:
+	var pc: Dictionary = pieces[int(cells[id]["piece"])]
+	if pc["seg"] != "wind":
+		return 0
+	return -1 if String(pc["wind"]) == "L" else 1
+
+## Caselle accanto (stessa colonna, corsia a destra o a sinistra) sulle tessere dritte:
+## servono al vento che sposta la slitta di lato.
+func _compute_sideways() -> void:
+	for pc in pieces:
+		var d: Vector2 = (pc["exit_mid"] - pc["entry_mid"]).normalized()
+		var right := Vector2(-d.y, d.x)
+		for id in pc["cells"]:
+			var c: Dictionary = cells[id]
+			c["side_r"] = -1
+			c["side_l"] = -1
+			for o in pc["cells"]:
+				if o == id:
+					continue
+				var v: Vector2 = cells[o]["pos"] - c["pos"]
+				if abs(v.dot(d)) > cell_len * 0.3:
+					continue
+				var lat := v.dot(right)
+				if abs(abs(lat) - lane_w) < lane_w * 0.35:
+					c["side_r" if lat > 0 else "side_l"] = o
 
 ## Quota di ogni tessera: le salite alzano la pista di RISE, le discese la abbassano.
 func _compute_heights() -> void:

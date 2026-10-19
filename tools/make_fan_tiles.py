@@ -27,6 +27,8 @@ SEGMENTS = {
     "ice":   ("straight_p16b", "Lago ghiacciato (fanmade)", {}),
     "fresh": ("straight_p18b", "Neve fresca (fanmade)", {}),
     "hut":   ("straight_p20b", "Baita (fanmade)", {}),
+    "wind_l": ("straight_p18b", "Vento laterale da destra (fanmade)", {"wind": "L"}),
+    "fork":  ("straight_p16a", "Bivio (fanmade)", {}),
 }
 
 
@@ -88,6 +90,16 @@ def sign(kind, r=34):
             for a in range(3):
                 ang = a * math.pi / 3
                 d.line([(px - math.cos(ang) * k * 0.16, py - math.sin(ang) * k * 0.16), (px + math.cos(ang) * k * 0.16, py + math.sin(ang) * k * 0.16)], fill=INK, width=int(R * 0.05))
+    elif kind == "fork":
+        # bivio: una freccia che si divide in due
+        w = int(R * 0.12)
+        d.line([(c, c + k * 0.95), (c, c + k * 0.05)], fill=INK, width=w)
+        for sgn in (-1, 1):
+            ex, ey = c + sgn * k * 0.62, c - k * 0.62
+            d.line([(c, c + k * 0.1), (ex, ey)], fill=INK, width=w)
+            ang = math.atan2(ey - c, ex - c)
+            for da in (2.5, -2.5):
+                d.line([(ex, ey), (ex + math.cos(ang + da) * k * 0.32, ey + math.sin(ang + da) * k * 0.32)], fill=INK, width=w)
     elif kind == "hut":
         # casetta con la chiave inglese (riparazioni)
         d.polygon([(c - k * 0.95, c - k * 0.05), (c, c - k * 0.9), (c + k * 0.95, c - k * 0.05)], fill=INK)
@@ -119,6 +131,8 @@ def keep_lines(base, edited, box):
 
 
 def paint(kind, base, face, rnd):
+    if kind == "wind_l":
+        kind = "wind"
     img = base.copy()
     x0, top, x1, bot = lane_band(face)
     W, H = img.size
@@ -194,6 +208,22 @@ def paint(kind, base, face, rnd):
         pass
     elif kind == "hut":
         pass
+    elif kind == "fork":
+        # isola di neve al centro: copre la corsia di mezzo (gli abeti sono in 3D)
+        lane = (bot - top) / 5
+        y0, y1 = top + lane * 2 + 4, top + lane * 3 - 4
+        x_a, x_b = x0 + 8, x1 - 26
+        isl = Image.new("RGBA", img.size, (0, 0, 0, 0))
+        idr = ImageDraw.Draw(isl)
+        idr.rounded_rectangle([x_a, y0 + 6, x_b, y1 + 8], radius=int(lane * 0.45), fill=(120, 150, 180, 120))
+        idr.rounded_rectangle([x_a, y0, x_b, y1], radius=int(lane * 0.45), fill=(246, 249, 252, 255))
+        for i in range(40):
+            x = rnd.uniform(x_a + 10, x_b - 10)
+            y = rnd.uniform(y0 + 6, y1 - 6)
+            r = rnd.uniform(5, 14)
+            idr.ellipse([x - r, y - r * 0.6, x + r, y + r * 0.6], fill=(222, 232, 242, 160))
+        isl = isl.filter(ImageFilter.GaussianBlur(1.2))
+        ov = Image.alpha_composite(ov, isl)
     edited = Image.alpha_composite(img, ov)
     if kind in ("ice", "up", "down", "wind"):
         edited = keep_lines(img, edited, (x0, top, x1, bot))
@@ -202,7 +232,7 @@ def paint(kind, base, face, rnd):
     ex = x1 - 8
     for off in (-4, 4):
         d2.line([(ex + off, top - 8), (ex + off, bot + 8)], fill=RED, width=3)
-    sg = sign(kind)
+    sg = sign("wind" if kind == "wind_l" else kind)
     for y in (top - sg.height * 0.55, bot - sg.height * 0.45):
         edited.alpha_composite(sg, (int(ex - sg.width / 2), int(y)))
     return edited
@@ -236,6 +266,25 @@ def main():
             nf["fresh"] = [idx(c, l) for (c, l) in ((1, 0), (2, 0), (2, 1), (3, 3), (3, 4), (4, 4), (4, 0))]
         if kind == "hut":
             nf["hut"] = [idx(3, 0)]
+        if kind == "fork":
+            # niente corsia di mezzo: si toglie con i suoi collegamenti e si rinumera
+            mid_lane = [idx(c, 2) for c in range(len(xs))]
+            keep = [i for i in range(len(cells)) if i not in mid_lane]
+            remap = {old: new for new, old in enumerate(keep)}
+            nf["cells"] = [cells[i] for i in keep]
+            nf["links"] = [[remap[a], remap[b]] for a, b in face.get("links", []) if a in remap and b in remap]
+            cells2 = nf["cells"]
+            def idx2(col, lane):
+                for i, p in enumerate(cells2):
+                    if round(p[0]) == xs[col] and round(p[1]) == ys[lane]:
+                        return i
+                return -1
+            # corridoio di sinistra con neve fresca, quello di destra con gli alberelli
+            nf["fresh"] = [idx2(c, l) for (c, l) in ((2, 0), (2, 1), (3, 1))]
+            nf["saplings"] = [idx2(2, 4), idx2(4, 3)]
+            ymid = ys[2]
+            nf["island"] = [[xs[c], ymid] for c in range(1, len(xs) - 1)]
+            nf["special"] = "fork"
         (FACES / f"{fid}.json").write_text(json.dumps(nf, ensure_ascii=False, indent=1))
         print("ok", fid)
 

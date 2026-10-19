@@ -21,7 +21,12 @@ func _face(id: String) -> Dictionary:
 	return _faces[id]
 
 ## Restituisce la definizione del percorso, o {} se non ci riesce.
-func generate(diff: int, length: int, seed_value := 0) -> Dictionary:
+## fan: aggiunge anche i segmenti fanmade (salite e discese, vento, ghiaccio, neve fresca, baita, bivio).
+const FAN := ["fan_ice", "fan_wind", "fan_wind_l", "fan_fresh", "fan_hut", "fan_fork"]
+var fan := false
+
+func generate(diff: int, length: int, seed_value := 0, with_fan := false) -> Dictionary:
+	fan = with_fan
 	if seed_value != 0:
 		rng.seed = seed_value
 	else:
@@ -30,8 +35,8 @@ func generate(diff: int, length: int, seed_value := 0) -> Dictionary:
 		var seq := _try(diff, length)
 		if seq.is_empty():
 			continue
-		var def := {"name": "Pista casuale (difficoltà %s, %s)" % [DIFF_NAMES[diff], LEN_NAMES[length]],
-			"note": _summary(seq), "pieces": seq, "random": true, "difficulty": diff, "length": length}
+		var def := {"name": "Pista casuale (difficoltà %s, %s%s)" % [DIFF_NAMES[diff], LEN_NAMES[length], ", fanmade" if fan else ""],
+			"note": _summary(seq), "pieces": seq, "random": true, "difficulty": diff, "length": length, "fan": fan}
 		var c := Course.new()
 		if c.build(def) and _finish_reachable(c):
 			return def
@@ -70,6 +75,7 @@ func _try(diff: int, length: int) -> Array:
 	mid = st["mid"]
 	dir = st["dir"]
 	var leading: int = 1 + rng.randi_range(0, 1)
+	var high := false          # pista rialzata da una salita: prima dell'arrivo serve una discesa
 	var i := 0
 	while i < n_mid:
 		var options := []
@@ -84,7 +90,14 @@ func _try(diff: int, length: int) -> Array:
 			return []
 		var pick := _weighted(options)
 		var cands := []
-		if pick == "S":
+		if pick == "S" and fan and i >= leading and rng.randf() < 0.5:
+			if high and (rng.randf() < 0.45 or i >= n_mid - 2):
+				cands.append("fan_down")
+			elif not high and rng.randf() < 0.3 and i < n_mid - 2:
+				cands.append("fan_up")
+			else:
+				cands.append(FAN[rng.randi_range(0, FAN.size() - 1)])
+		if pick == "S" and cands.is_empty():
 			var use_special: bool = rng.randf() < p_special and i >= leading
 			if use_special:
 				var ks: Array = kinds_ok.duplicate()
@@ -115,7 +128,12 @@ func _try(diff: int, length: int) -> Array:
 			ok = true
 			var f := _face(fid)
 			var t := String(f.get("type", ""))
-			if t == "straight":
+			if f.get("fanmade", false):
+				# i segmenti fanmade non sono pezzi della scatola: non consumano rettilinei
+				gap += 1
+				if fid == "fan_up": high = true
+				if fid == "fan_down": high = false
+			elif t == "straight":
 				straights_left -= 1
 				gap += 1
 				if plain.has(fid): plain.erase(fid)
@@ -134,8 +152,11 @@ func _try(diff: int, length: int) -> Array:
 	# almeno una svolta
 	if corners + us == 0:
 		return []
-	# arrivo e rettilineo di fuga
-	for fid in ["finish_p21", plain[0] if plain.size() > 0 else "straight_p16a"]:
+	# arrivo e rettilineo di fuga (prima si scende, se la pista è ancora in alto)
+	var tail := ["finish_p21", plain[0] if plain.size() > 0 else "straight_p16a"]
+	if high:
+		tail.push_front("fan_down")
+	for fid in tail:
 		var pl := _place(fid, placed.size(), mid, dir)
 		if pl.is_empty() or _collides(pl["cells"], placed):
 			return []
@@ -201,16 +222,21 @@ func _finish_reachable(c: Course) -> bool:
 	return false
 
 func _summary(seq: Array) -> String:
-	var n := {"corner": 0, "uturn": 0, "straight": 0, "saplings": 0, "snowdrift": 0, "chasm": 0, "leap": 0}
+	var n := {"corner": 0, "uturn": 0, "straight": 0, "saplings": 0, "snowdrift": 0, "chasm": 0, "leap": 0, "fan": 0}
 	for fid in seq:
 		var f := _face(fid)
 		var t := String(f.get("type", ""))
 		if n.has(t): n[t] += 1
 		var sp := String(f.get("special", ""))
-		if n.has(sp): n[sp] += 1
+		if f.get("fanmade", false):
+			n["fan"] += 1
+			n["straight"] -= 1
+		elif n.has(sp): n[sp] += 1
 	var pl := func(k: int, one: String, many: String) -> String: return "%d %s" % [k, one if k == 1 else many]
 	var parts := [pl.call(n["corner"], "curva", "curve"), pl.call(n["uturn"], "inversione", "inversioni"), pl.call(n["straight"], "rettilineo", "rettilinei")]
 	for k in [["saplings", "con alberelli"], ["snowdrift", "con cumulo"], ["chasm", "con crepaccio"], ["leap", "Leap of Death"]]:
 		if n[k[0]] > 0:
 			parts.append("%d %s" % [n[k[0]], k[1]] if k[0] != "leap" else k[1])
+	if n["fan"] > 0:
+		parts.append("%d segment%s fanmade" % [n["fan"], "o" if n["fan"] == 1 else "i"])
 	return "Pista generata: " + ", ".join(parts) + "."

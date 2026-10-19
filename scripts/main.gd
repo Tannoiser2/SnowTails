@@ -362,6 +362,7 @@ func _scan_courses() -> void:
 
 var rnd_diff := 1
 var rnd_len := 1
+var rnd_fan := false
 var rnd_def := {}
 var _menu_random_box: VBoxContainer
 var _menu_preview: CoursePreview
@@ -502,6 +503,23 @@ func _menu_build_random() -> void:
 			b.pressed.connect(Callable(self, row[3]).bind(k))
 			h.add_child(b)
 		_menu_random_box.add_child(h)
+	var fr := HBoxContainer.new()
+	fr.add_theme_constant_override("separation", 8)
+	var fl := UIKit.label("Fanmade", 20)
+	fl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	fl.custom_minimum_size = Vector2(120, 0)
+	fl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	fr.add_child(fl)
+	for opt in [[false, "no"], [true, "sì: pendii, vento, ghiaccio…"]]:
+		var bf := UIKit.button(opt[1], rnd_fan == opt[0])
+		bf.custom_minimum_size = Vector2(0, 52)
+		bf.pressed.connect(func():
+			rnd_fan = opt[0]
+			rnd_def = {}
+			_menu_build_random()
+			_menu_refresh_info())
+		fr.add_child(bf)
+	_menu_random_box.add_child(fr)
 	var again := UIKit.button("Genera un'altra pista")
 	again.pressed.connect(func():
 		rnd_def = {}
@@ -522,9 +540,9 @@ func _menu_set_len(k: int) -> void:
 
 func _menu_refresh_info() -> void:
 	if _is_random():
-		if rnd_def.is_empty() or int(rnd_def.get("difficulty", -1)) != rnd_diff or int(rnd_def.get("length", -1)) != rnd_len:
+		if rnd_def.is_empty() or int(rnd_def.get("difficulty", -1)) != rnd_diff or int(rnd_def.get("length", -1)) != rnd_len or bool(rnd_def.get("fan", false)) != rnd_fan:
 			var gen := CourseGen.new()
-			rnd_def = gen.generate(rnd_diff, rnd_len)
+			rnd_def = gen.generate(rnd_diff, rnd_len, 0, rnd_fan)
 			if rnd_def.is_empty():
 				_menu_info.text = gen.last_error
 				_menu_start.disabled = true
@@ -601,7 +619,7 @@ func show_help() -> void:
 	vb.add_child(UIKit.title("Come si gioca", 42))
 	var r := UIKit.rich(21)
 	r.add_theme_color_override("default_color", UIKit.INK)
-	r.text = """[b]La slitta.[/b] Due cani e un freno, tutti a 3 all'inizio. Velocità = cane sinistro + cane destro − freno. Deriva = differenza fra i cani: ti sposti in diagonale verso il cane più forte (mai più della velocità), nei passi che scegli tu.
+	r.text = ("""[b]La slitta.[/b] Due cani e un freno, tutti a 3 all'inizio. Velocità = cane sinistro + cane destro − freno. Deriva = differenza fra i cani: ti sposti in diagonale verso il cane più forte (mai più della velocità), nei passi che scegli tu.
 
 [b]Il turno.[/b] Giochi da 1 a 3 carte dello stesso valore, al massimo una per spazio. Le carte sui cani restano; quella sul freno lo imposta e va negli scarti. Poi torni a 5 carte. Le ammaccature occupano posto in mano e non si scartano.
 
@@ -611,11 +629,13 @@ func show_help() -> void:
 
 [b]Fine.[/b] Si corre finché tutte le slitte hanno tagliato il traguardo; chi è arrivato smette di muovere. In classifica conta prima il giro in cui si taglia il traguardo, poi, a parità di giro, chi è andato più lontano oltre la linea.
 
+[b]Segmenti fanmade.[/b] Salita: chi ci passa fa al massimo %d punti di movimento. Discesa: chi parte in discesa va almeno a %d, anche frenando. Neve fresca: ogni casella coi cumuli costa 2 punti. Ghiaccio: chi entra derivando continua a derivare finché è sul ghiaccio, e a fine movimento scivola avanti di una casella. Vento: ogni 2 caselle percorse sulla tessera ti sposta di una corsia nel verso della manica a vento; contro il bordo è un'ammaccatura. Baita: chi si ferma sulla casella accanto alla baita ripara un'ammaccatura, ma non pesca. Bivio: un'isola di abeti divide la pista; da una parte neve fresca, dall'altra alberelli.
+
 [b]Variante simultanea.[/b] Se nel menu scegli «Simultaneo», a ogni giro tutti programmano la mossa (carte e casella d'arrivo) senza vedere quella degli altri, poi le slitte partono insieme. Partono e arrivano tutte insieme, quindi chi ha più caselle da fare va più veloce. Due slitte non entrano mai nella stessa casella nello stesso momento: se possono, scelgono una rotta equivalente che evita il contatto; se non possono, entra chi va più veloce (a parità, chi era più avanti a inizio giro) e l'altra si ferma prima e prende mezza ammaccatura (due mezze fanno un'ammaccatura). Il bonus di equilibrio si calcola sulle posizioni di inizio giro.
 
 [b]Comandi.[/b] Un dito trascina la pista; due dita: avvicini o allontani, ruoti la vista e, spostandole insieme in su o in giù, cambi l'inclinazione. Col mouse: rotellina per lo zoom, tasto destro per ruotare e inclinare. «Segui» fa girare la telecamera nel senso di marcia della slitta di turno.
 
-[b]Tastiera.[/b] 1–5 sceglie una carta di quel valore; A, S, D (o frecce sinistra, giù, destra) la mettono su cane sinistro, freno, cane destro; Invio muove; Backspace riprende le carte; Esc torna indietro o apre il menu. Tocca una carta e poi uno spazio della plancia; poi «Muovi» e tocca la destinazione."""
+[b]Tastiera.[/b] 1–5 sceglie una carta di quel valore; A, S, D (o frecce sinistra, giù, destra) la mettono su cane sinistro, freno, cane destro; Invio muove; Backspace riprende le carte; Esc torna indietro o apre il menu. Tocca una carta e poi uno spazio della plancia; poi «Muovi» e tocca la destinazione.""") % [SledGame.UP_MAX, SledGame.DOWN_MIN]
 	if _is_landscape():
 		# in orizzontale due colonne: il testo sta tutto nella finestra senza rimpicciolirsi troppo
 		var paras: PackedStringArray = r.text.split("\n\n")
@@ -1500,6 +1520,8 @@ func _stat_grid() -> GridContainer:
 	g.add_theme_constant_override("v_separation", 5)
 	var m := game.mat_after(cur, pending if (phase == "cards" or phase == "dest") else [])
 	var speed: int = max(0, m["L"] + m["R"] - m["B"])
+	if course.seg_of(cur.cell) == "down":
+		speed = max(speed, SledGame.DOWN_MIN)
 	var d: int = m["R"] - m["L"]
 	var c: Dictionary = course.cells[cur.cell]
 	g.add_child(_tile("Velocità", str(speed)))
@@ -1520,6 +1542,17 @@ func _stat_grid() -> GridContainer:
 	if not lp.is_empty() and (float(lp["s"]) - float(c["s"])) / course.cell_len <= 14:
 		var dl := int(round((float(lp["s"]) - float(c["s"])) / course.cell_len))
 		g.add_child(_tile("Salto min. %d" % lp["min"], "fra %d" % max(dl, 0), speed < int(lp["min"]) and dl <= speed))
+	var sg := _seg_ahead(cur.cell, max(speed, 1) + 3)
+	if not sg.is_empty():
+		var info := {"up": ["Salita", "max %d" % SledGame.UP_MAX], "down": ["Discesa", "min %d" % SledGame.DOWN_MIN],
+			"wind": ["Vento", "→ di lato"], "ice": ["Ghiaccio", "scivola"], "fresh": ["Neve fresca", "costa 2"],
+			"hut": ["Baita", "ripara 1"], "fork": ["Bivio", "scegli"]}
+		var it: Array = info.get(sg["seg"], [sg["seg"], ""])
+		var warn: bool = sg["seg"] == "up" and speed > SledGame.UP_MAX
+		var when := "qui: " if int(sg["dist"]) == 0 else "fra %d: " % int(sg["dist"])
+		if sg["seg"] == "wind":
+			it = ["Vento", "→ a destra" if int(sg["wind"]) > 0 else "← a sinistra"]
+		g.add_child(_tile(it[0], when + String(it[1]), warn))
 	g.add_child(_tile("Mazzo", str(cur.deck.size())))
 	g.add_child(_tile("Scarti", str(cur.discard.size() + cur.used.size())))
 	if _is_mine(cur):
@@ -1538,6 +1571,19 @@ func _stat_grid() -> GridContainer:
 			_refresh())
 		g.add_child(tb)
 	return g
+
+## Primo segmento fanmade sulla strada (casella attuale compresa) entro n caselle in avanti.
+func _seg_ahead(start: int, n: int) -> Dictionary:
+	var id := start
+	for k in n + 1:
+		var sgn := course.seg_of(id)
+		if sgn != "":
+			return {"seg": sgn, "dist": k, "wind": course.wind_of(id)}
+		var fw: Array = course.cells[id]["fwd"]
+		if fw.is_empty():
+			break
+		id = fw[0]
+	return {}
 
 func _action_text() -> String:
 	match phase:

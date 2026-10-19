@@ -209,9 +209,20 @@ func commit_play(p: Player, pend: Array) -> void:
 ## Tutti gli esiti possibili del movimento: ogni passo è "avanti" (oltre una linea blu)
 ## o "deriva" (avanti in diagonale oltre una linea nera); dove la rete offre più
 ## caselle si esplorano tutte. Gli esiti sono raggruppati per casella d'arrivo.
+## Segmenti fanmade: in salita non si fanno più di UP_MAX punti di movimento; chi parte in
+## discesa va almeno a DOWN_MIN; la neve fresca costa 2 punti per casella; sul ghiaccio chi
+## entra derivando continua a derivare e a fine movimento scivola avanti di una casella;
+## il vento sposta di una corsia ogni 2 caselle percorse; la baita ripara un'ammaccatura.
+const UP_MAX := 4
+const DOWN_MIN := 5
+
 func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 	var speed: int = m["L"] + m["R"] - m["B"]
 	var drift: int = m["R"] - m["L"]
+	var slid := false
+	if course.seg_of(p.cell) == "down" and speed < DOWN_MIN:
+		speed = DOWN_MIN
+		slid = true
 	if speed <= 0:
 		return [{"path": [], "end": p.cell, "dents": 0, "corner_dents": 0, "crash": "", "bonus": false, "bonus_n": 0, "speed": 0, "sap": []}]
 	var dir := signi(drift)
@@ -222,14 +233,16 @@ func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 		if q != p and not q.wrecked and q.cell >= 0 and q.finish_round == 0:
 			occ[q.cell] = true
 	var res := []
-	_dfs(p.cell, speed, k, dir, speed, occ, [], 0, res, 0, [])
-	for r in res:
-		r["from"] = p.cell
+	var up0: bool = course.seg_of(p.cell) == "up"
+	_dfs(p.cell, speed, k, dir, speed, occ, [], 0, res, 0, [], up0, "")
 	if drift == 0 and p.moves > 0:
 		var b := rank_of(p)
-		_dfs(p.cell, speed + b, 0, 0, speed + b, occ, [], 0, res, b, [])
-		for r in res:
-			r["from"] = p.cell
+		_dfs(p.cell, speed + b, 0, 0, speed + b, occ, [], 0, res, b, [], up0, "")
+	for r in res:
+		r["from"] = p.cell
+		_post_move(r, occ)
+		if slid:
+			r["slid"] = true
 	if all_paths:
 		return res
 	var best := {}
@@ -244,7 +257,7 @@ func _out(path: Array, end: int, crash: String, cd: int, total: int, bonus_n: in
 	return {"path": path, "end": end, "crash": crash, "corner_dents": cd, "sap": sap,
 		"dents": cd + sap.size() + (1 if crash == "edge" else 0), "bonus": bonus_n > 0, "bonus_n": bonus_n, "speed": total}
 
-func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictionary, path: Array, cd: int, res: Array, bonus_n: int, sap: Array) -> void:
+func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictionary, path: Array, cd: int, res: Array, bonus_n: int, sap: Array, up := false, last := "") -> void:
 	if res.size() > 20000:
 		return
 	if steps == 0:
@@ -252,10 +265,14 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 		return
 	var c := cell(cur)
 	var kinds := []
-	if drifts < steps:
-		kinds.append("f")
-	if drifts > 0:
-		kinds.append("d")
+	if course.seg_of(cur) == "ice" and last == "d" and drifts > 0:
+		# sul ghiaccio la deriva non si ferma: chi ci entra derivando continua a derivare
+		kinds = ["d"]
+	else:
+		if drifts < steps:
+			kinds.append("f")
+		if drifts > 0:
+			kinds.append("d")
 	for kind in kinds:
 		var targets: Array = c["fwd"] if kind == "f" else (c["dr"] if dir > 0 else c["dl"])
 		var nd: int = drifts - (1 if kind == "d" else 0)
@@ -275,6 +292,14 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 				r2["hit_cell"] = t
 				res.append(r2)
 				continue
+			var cost := 2 if course.fresh.has(t) else 1
+			var up2: bool = up or course.seg_of(t) == "up"
+			if cost > steps or (up2 and (total - steps) + cost > UP_MAX):
+				# non ci entra: neve fresca troppo profonda per i punti rimasti, o salita oltre il limite
+				var r3 := _out(path, cur, "", cd, total, bonus_n, sap)
+				r3["stopped"] = "fresh" if cost > steps else "up"
+				res.append(r3)
+				continue
 			var cd2: int = cd + course.limit_dents(c["piece"], cell(t)["piece"], total) + course.leap_dents(cur, t, total)
 			var p2 := path.duplicate()
 			p2.append(t)
@@ -282,7 +307,7 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 			if saplings.has(t):
 				s2 = sap.duplicate()
 				s2.append(t)
-			_dfs(t, steps - 1, nd, dir, total, occ, p2, cd2, res, bonus_n, s2)
+			_dfs(t, steps - cost, nd if cost == 1 else min(nd, steps - cost), dir, total, occ, p2, cd2, res, bonus_n, s2, up2, kind)
 
 ## Variante simultanea: dalle mosse programmate (pid -> {pend, o}) ricava gli esiti reali.
 ## Le slitte si muovono insieme per tutta la durata del giro: chi ha n caselle da fare entra
@@ -432,6 +457,62 @@ func _clash(tl: Array, other: Array) -> int:
 				return i
 	return -1
 
+## Dopo il movimento scelto: scivolata sul ghiaccio e spinta del vento.
+func _post_move(r: Dictionary, occ: Dictionary) -> void:
+	if String(r["crash"]) != "":
+		return
+	var path: Array = (r["path"] as Array).duplicate()
+	if path.is_empty():
+		return
+	var end: int = r["end"]
+	var sap: Array = (r["sap"] as Array).duplicate()
+	# ghiaccio: a fine movimento si scivola avanti di una casella
+	if course.seg_of(end) == "ice":
+		var fw: Array = cell(end)["fwd"]
+		if not fw.is_empty():
+			var h := course.heading(end)
+			var t: int = fw[0]
+			for f in fw:
+				if (cell(f)["pos"] - cell(end)["pos"]).normalized().dot(h) > (cell(t)["pos"] - cell(end)["pos"]).normalized().dot(h):
+					t = f
+			if occ.has(t):
+				r["crash"] = "sled"
+				r["hit_cell"] = t
+				r["hit_dir"] = (cell(t)["pos"] - cell(end)["pos"]).normalized()
+			else:
+				path.append(t)
+				end = t
+				r["ice"] = true
+				if saplings.has(t) and not sap.has(t):
+					sap.append(t)
+	# vento: una corsia di lato ogni 2 caselle percorse sulle tessere col vento
+	if String(r["crash"]) == "":
+		var n := 0
+		var w := 0
+		for t in path:
+			var ww := course.wind_of(t)
+			if ww != 0:
+				n += 1
+				w = ww
+		for i in n / 2:
+			var t2: int = cell(end).get("side_r" if w > 0 else "side_l", -1)
+			if t2 < 0:
+				var h2 := course.heading(end)
+				r["crash"] = "edge"
+				r["hit_dir"] = Vector2(-h2.y, h2.x) * float(w)
+				break
+			if occ.has(t2):
+				break
+			path.append(t2)
+			end = t2
+			r["wind"] = int(r.get("wind", 0)) + 1
+			if saplings.has(t2) and not sap.has(t2):
+				sap.append(t2)
+	r["path"] = path
+	r["end"] = end
+	r["sap"] = sap
+	r["dents"] = int(r["corner_dents"]) + sap.size() + (1 if String(r["crash"]) == "edge" else 0)
+
 func describe(pend: Array, o: Dictionary, m: Dictionary) -> String:
 	var v: int = pend[0]["v"]
 	var where := []
@@ -461,6 +542,17 @@ func after_move(p: Player, o: Dictionary) -> bool:
 	if _leap_part(o) > 0:
 		msgs.append("salto troppo lento (+%d)" % _leap_part(o))
 	var in_crev: bool = course.crevasse.has(int(o["end"]))
+	if o.get("slid", false):
+		msgs.append("in discesa non si frena: almeno %d" % DOWN_MIN)
+	match String(o.get("stopped", "")):
+		"up":
+			msgs.append("la salita la ferma (al massimo %d)" % UP_MAX)
+		"fresh":
+			msgs.append("si pianta nella neve fresca")
+	if o.get("ice", false):
+		msgs.append("scivola sul ghiaccio")
+	if int(o.get("wind", 0)) > 0:
+		msgs.append("il vento la sposta di %d corsi%s" % [int(o["wind"]), "a" if int(o["wind"]) == 1 else "e"])
 	if in_crev:
 		msgs.append("si ferma nella spaccatura e non pesca")
 	var sap: Array = o.get("sap", [])
@@ -490,7 +582,16 @@ func after_move(p: Player, o: Dictionary) -> bool:
 		log_text += " — " + "; ".join(msgs)
 	if p.wrecked:
 		return false
-	if o["crash"] != "sled" and not in_crev:
+	# baita: chi ci si ferma ripara un'ammaccatura, ma non pesca
+	var repaired := false
+	if course.huts.has(int(o["end"])) and String(o["crash"]) == "" and (p.dents > 0 or p.half):
+		if p.half:
+			p.half = false
+		else:
+			p.dents -= 1
+		repaired = true
+		log_text += " — si ripara alla baita (−1 ammaccatura, non pesca)"
+	if o["crash"] != "sled" and not in_crev and not repaired:
 		draw_up(p)
 	if hand_size(p) > 5 and not p.hand.is_empty():
 		if p.ai:
@@ -625,6 +726,8 @@ func ai_score(p: Player, m: Dictionary, o: Dictionary, n_cards: int) -> float:
 		if not nc.is_empty():
 			var side: float = clamp(float(en["lat"]) / course.lane_w, -2.5, 2.5)
 			s += side * (1.5 if nc["turn"] == "R" else -1.5)
+	if course.huts.has(int(o["end"])) and (p.dents > 0 or p.half) and String(o["crash"]) == "":
+		s += 8.0 + p.dents * 9.0
 	if (o["path"] as Array).is_empty():
 		s -= 12.0 + 60.0 * p.stalls
 	if not fin:

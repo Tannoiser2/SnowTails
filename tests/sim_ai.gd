@@ -6,7 +6,8 @@ func _init() -> void:
 	var main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await create_timer(0.3).timeout
-	main.course_idx = main.course_files.find("res://data/courses/prova.json")
+	var cpath := OS.get_environment("COURSE") if OS.get_environment("COURSE") != "" else "res://data/courses/prova.json"
+	main.course_idx = main.course_files.find(cpath)
 	main._menu_refresh_info()
 	main.setup_n = 5
 	main.setup_ai = [true, true, true, true, true]

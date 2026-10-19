@@ -1,6 +1,6 @@
 {
  "name": "Fanmade: vento, ghiaccio e pendii",
- "note": "Pista di prova dei segmenti fanmade (salita, vento, ghiaccio, baita, neve fresca, discesa). Per ora solo l'aspetto: le regole dei segmenti arriveranno dopo.",
+ "note": "Pista fanmade con tutti i segmenti: salita, vento, ghiaccio, baita, bivio, neve fresca, vento contrario e discesa.",
  "pieces": [
   "start_p21",
   "straight_p16a",
@@ -8,7 +8,9 @@
   "fan_wind",
   "fan_ice",
   "fan_hut",
+  "fan_fork",
   "fan_fresh",
+  "fan_wind_l",
   "fan_down",
   "straight_p13a",
   "finish_p21",
