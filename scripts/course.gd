@@ -23,7 +23,9 @@ var leaps: Array = []       # {piece, min, s}
 var fresh := {}             # caselle con neve fresca
 var huts := {}              # caselle della baita
 ## Altezza (unità del mondo 3D) all'ingresso e all'uscita di ogni tessera: salite e discese
-const RISE := 1.1
+const RISE := 1.6
+## La pista sta su un argine di neve: quota di base sopra la pianura
+const BASE := 0.5
 var cell_len := 97.0
 var lane_w := 53.8
 var missing: Array = []
@@ -179,13 +181,13 @@ func _compute_sideways() -> void:
 
 ## Quota di ogni tessera: le salite alzano la pista di RISE, le discese la abbassano.
 func _compute_heights() -> void:
-	var h := 0.0
+	var h := BASE
 	for pc in pieces:
 		pc["h0"] = h
 		if pc["seg"] == "up":
 			h += RISE
 		elif pc["seg"] == "down":
-			h = max(h - RISE, 0.0)
+			h = max(h - RISE, BASE)
 		pc["h1"] = h
 
 ## Quota della tessera pi nel punto p (coordinate del percorso): costante, o in pendenza

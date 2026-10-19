@@ -107,7 +107,11 @@ func _build_env() -> void:
 	gm.albedo_texture = nt
 	gm.uv1_scale = Vector3(60, 60, 1)
 	gm.roughness = 0.95
-	gm.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	# pianura innevata illuminata come il terreno attorno alla pista: il bordo non si vede
+	gm.albedo_color = SegmentFx.GROUND_TINT
+	nt.color_ramp.set_color(0, Color("e3eaf1"))
+	nt.color_ramp.set_color(1, Color("ffffff"))
+	gm.uv1_scale = Vector3(90, 90, 1)
 	ground.material_override = gm
 	ground.position.y = -0.03
 	add_child(ground)
@@ -158,6 +162,7 @@ func setup(c: Course, g: SledGame) -> void:
 		sh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_tiles.add_child(sh)
 	SegmentFx.build(_tiles, c)
+	_tiles.add_child(SegmentFx.terrain(c))
 	_saps = Node3D.new()
 	add_child(_saps)
 	if _fx == null:

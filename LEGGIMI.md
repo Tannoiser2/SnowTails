@@ -259,7 +259,9 @@ Titoli e pulsanti principali: Luckiest Guy (Apache 2.0). Testo: Nunito (SIL Open
 License). Le licenze sono in `assets/fonts/`.
 
 ## Segmenti fanmade
-Tessere ricavate dai rettilinei scansionati (`tools/make_fan_tiles.py`), con cartelli
+La pista corre su un argine di neve con i declivi ai lati e qualche abete sui pendii
+(terreno generato attorno alle caselle, vale per tutte le piste). Tessere ricavate dai
+rettilinei scansionati (`tools/make_fan_tiles.py`), con cartelli
 all'ingresso nello stile delle curve ed effetti 3D. Regole:
 - **Salita**: chi ci passa fa al massimo 4 punti di movimento.
 - **Discesa**: chi parte in discesa va almeno a 5, anche frenando.

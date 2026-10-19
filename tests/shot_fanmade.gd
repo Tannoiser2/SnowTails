@@ -46,11 +46,11 @@ func _init() -> void:
 	var z: Vector2 = c.pieces[7]["exit_mid"]
 	b.target_goal = BoardView3D.to3((a + z) * 0.5, 0.3)
 	b.target = b.target_goal
-	b.yaw_goal = BoardView3D.yaw_of((z - a).normalized()) + PI * 0.5
+	b.yaw_goal = BoardView3D.yaw_of((z - a).normalized()) + PI * 0.32
 	b.yaw = b.yaw_goal
-	b.pitch = deg_to_rad(10)
-	b.dist_goal = 16.0
-	b.dist = 16.0
+	b.pitch = deg_to_rad(22)
+	b.dist_goal = 17.0
+	b.dist = 17.0
 	await create_timer(1.0).timeout
 	root.get_texture().get_image().save_png("/tmp/shots/fan_side.png")
 	quit()

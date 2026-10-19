@@ -28,8 +28,6 @@ static func anchor(c: Course, pi: int, at: Vector2, y_off := 0.0) -> Node3D:
 static func build(parent: Node3D, c: Course) -> void:
 	for pi in c.pieces.size():
 		var pc: Dictionary = c.pieces[pi]
-		if max(float(pc["h0"]), float(pc["h1"])) > 0.01:
-			parent.add_child(_skirt(c, pi))
 		match String(pc["seg"]):
 			"wind":
 				_wind(parent, c, pi)
@@ -440,3 +438,150 @@ class Windsock:
 			var k := float(i + 1)
 			sg.rotation.y = sin(_t * 7.0 - k * 0.9) * 0.06 * k
 			sg.rotation.x = -0.05 * k * 0.5 + sin(_t * 5.0 - k * 1.2) * 0.03 * k
+
+
+# ---------- terreno: argine di neve intorno alla pista, con i declivi ai lati ----------
+const T_FLAT := 1.45     # distanza dalla casella più vicina fino a cui il terreno sta alla quota della pista
+const T_SLOPE := 2.8     # larghezza del declivio fino alla pianura
+const T_STEP := 0.33     # passo della griglia
+const T_GROUND := -0.025
+const T_ALBEDO := Color(0.50, 0.49, 0.49)
+const T_FAR := Color("c3d0dd")                       # colore della neve in pianura
+const GROUND_TINT := Color(0.50 * 0.765, 0.49 * 0.816, 0.49 * 0.867)
+
+## Terreno a griglia: ogni punto prende la quota della tessera della casella più vicina
+## e scende dolcemente fino alla pianura, con qualche gobba di neve; sui pendii, abeti.
+static func terrain(c: Course) -> Node3D:
+	var root := Node3D.new()
+	if c.cells.is_empty():
+		return root
+	var S := BoardView3D.S
+	var bucket := {}
+	var bs := 2.5
+	var mn := Vector2(INF, INF)
+	var mx := Vector2(-INF, -INF)
+	for cc in c.cells:
+		var w: Vector2 = cc["pos"] * S
+		mn = mn.min(w)
+		mx = mx.max(w)
+		var k := Vector2i(floor(w.x / bs), floor(w.y / bs))
+		if not bucket.has(k):
+			bucket[k] = []
+		bucket[k].append(cc["id"])
+	var reach := T_FLAT + T_SLOPE
+	mn -= Vector2.ONE * (reach + 1.0)
+	mx += Vector2.ONE * (reach + 1.0)
+	var nx := int(ceil((mx.x - mn.x) / T_STEP)) + 1
+	var nz := int(ceil((mx.y - mn.y) / T_STEP)) + 1
+	var noise := FastNoiseLite.new()
+	noise.seed = 4242
+	noise.frequency = 0.35
+	var hs := PackedFloat32Array()
+	var fs := PackedFloat32Array()
+	hs.resize(nx * nz)
+	fs.resize(nx * nz)
+	var rb := int(ceil(reach / bs))
+	for j in nz:
+		for i in nx:
+			var w := Vector2(mn.x + i * T_STEP, mn.y + j * T_STEP)
+			var kb := Vector2i(floor(w.x / bs), floor(w.y / bs))
+			var best := -1
+			var bd := INF
+			for dj in range(-rb, rb + 1):
+				for di in range(-rb, rb + 1):
+					var lst = bucket.get(kb + Vector2i(di, dj))
+					if lst == null:
+						continue
+					for id in lst:
+						var d: float = (c.cells[id]["pos"] * S).distance_squared_to(w)
+						if d < bd:
+							bd = d
+							best = id
+			var h := T_GROUND
+			var f := 0.0
+			if best >= 0:
+				var d := sqrt(bd)
+				if d < reach:
+					var t: float = clamp((d - T_FLAT) / T_SLOPE, 0.0, 1.0)
+					f = 0.5 + 0.5 * cos(t * PI)          # 1 sulla pista, 0 in pianura
+					var top: float = c.piece_height(int(c.cells[best]["piece"]), w / S) - 0.03
+					var bump := noise.get_noise_2d(w.x, w.y) * 0.22 * sin(f * PI)
+					h = lerp(T_GROUND, top, f) + bump
+			hs[j * nx + i] = h
+			fs[j * nx + i] = f
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var snow := Color("f2f7fc")
+	var shade := T_FAR
+	for j in nz - 1:
+		for i in nx - 1:
+			var ids := [j * nx + i, j * nx + i + 1, (j + 1) * nx + i + 1, (j + 1) * nx + i]
+			for q in [0, 1, 2, 0, 2, 3]:
+				var id: int = ids[q]
+				var ii := id % nx
+				var jj := id / nx
+				# più ripido = più azzurro in ombra: i declivi si leggono anche da lontano
+				var ia: int = max(ii - 1, 0)
+				var ib: int = min(ii + 1, nx - 1)
+				var ja: int = max(jj - 1, 0)
+				var jb: int = min(jj + 1, nz - 1)
+				var gx: float = (hs[jj * nx + ib] - hs[jj * nx + ia]) / (T_STEP * float(ib - ia))
+				var gz: float = (hs[jb * nx + ii] - hs[ja * nx + ii]) / (T_STEP * float(jb - ja))
+				var steep: float = clamp(sqrt(gx * gx + gz * gz) * 1.3, 0.0, 1.0)
+				var col := shade.lerp(snow, clamp(fs[id] * 1.4, 0.0, 1.0)).lerp(Color("a3b4c6"), steep * 0.8)
+				st.set_color(col)
+				st.add_vertex(Vector3(mn.x + ii * T_STEP, hs[id], mn.y + jj * T_STEP))
+	st.generate_normals()
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var m := StandardMaterial3D.new()
+	m.vertex_color_use_as_albedo = true
+	m.roughness = 1.0
+	m.albedo_color = T_ALBEDO
+	mi.material_override = m
+	root.add_child(mi)
+	_slope_trees(root, c, hs, fs, nx, nz, mn)
+	return root
+
+## Abeti sparsi sui declivi (MultiMesh: tanti alberi con poco costo).
+static func _slope_trees(root: Node3D, c: Course, hs: PackedFloat32Array, fs: PackedFloat32Array, nx: int, nz: int, mn: Vector2) -> void:
+	var path := "res://assets/models/sapling.glb"
+	if not ResourceLoader.exists(path):
+		return
+	var inst: Node3D = (load(path) as PackedScene).instantiate()
+	var found := inst.find_children("*", "MeshInstance3D", true, false)
+	if found.is_empty():
+		inst.free()
+		return
+	var src := found[0] as MeshInstance3D
+	var mesh := src.mesh
+	var base_xf := src.global_transform if src.is_inside_tree() else src.transform
+	inst.free()
+	var rng := RandomNumberGenerator.new()
+	rng.seed = 99
+	var xfs := []
+	for j in range(1, nz - 1, 2):
+		for i in range(1, nx - 1, 2):
+			var id := j * nx + i
+			var f := fs[id]
+			if f < 0.22 or f > 0.72 or rng.randf() > 0.13:
+				continue
+			var sc := rng.randf_range(0.9, 1.6)
+			var b := Basis(Vector3.UP, rng.randf() * TAU).scaled(Vector3.ONE * sc)
+			var pos := Vector3(mn.x + i * T_STEP + rng.randf_range(-0.12, 0.12), hs[id] - 0.03, mn.y + j * T_STEP + rng.randf_range(-0.12, 0.12))
+			xfs.append(Transform3D(b, pos) * base_xf)
+	if xfs.is_empty():
+		return
+	var mm := MultiMesh.new()
+	mm.transform_format = MultiMesh.TRANSFORM_3D
+	mm.mesh = mesh
+	mm.instance_count = xfs.size()
+	for k in xfs.size():
+		mm.set_instance_transform(k, xfs[k])
+	var mmi := MultiMeshInstance3D.new()
+	mmi.multimesh = mm
+	var tm := StandardMaterial3D.new()
+	tm.vertex_color_use_as_albedo = true
+	tm.roughness = 0.9
+	mmi.material_override = tm
+	root.add_child(mmi)
