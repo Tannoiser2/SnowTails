@@ -1,17 +1,14 @@
 {
  "name": "Fanmade: vento, ghiaccio e pendii",
- "note": "Pista fanmade con tutti i segmenti: salita, vento, ghiaccio, baita, bivio, neve fresca, vento contrario e discesa.",
+ "note": "Caratteristiche fanmade sommate ai rettilinei (salita col vento, ghiaccio con la baita, neve fresca, discesa col vento) e il bivio con la scorciatoia.",
  "pieces": [
   "start_p21",
   "straight_p16a",
-  "fan_up",
-  "fan_wind",
-  "fan_ice",
-  "fan_hut",
+  {"id": "straight_p14a", "mods": {"slope": "up", "wind": "R"}},
+  {"id": "straight_p18a", "mods": {"ice": true, "hut": true}},
   "fan_fork",
-  "fan_fresh",
-  "fan_wind_l",
-  "fan_down",
+  {"id": "straight_p20a", "mods": {"fresh": true}},
+  {"id": "straight_p18b", "mods": {"slope": "down", "wind": "L"}},
   "straight_p13a",
   "finish_p21",
   "straight_p20b"

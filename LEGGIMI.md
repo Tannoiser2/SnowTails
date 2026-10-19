@@ -258,22 +258,31 @@ arrivo possibile.
 Titoli e pulsanti principali: Luckiest Guy (Apache 2.0). Testo: Nunito (SIL Open Font
 License). Le licenze sono in `assets/fonts/`.
 
-## Segmenti fanmade
+## Caratteristiche fanmade
 La pista corre su un argine di neve con i declivi ai lati e qualche abete sui pendii
-(terreno generato attorno alle caselle, vale per tutte le piste). Tessere ricavate dai
-rettilinei scansionati (`tools/make_fan_tiles.py`), con cartelli
-all'ingresso nello stile delle curve ed effetti 3D. Regole:
+(terreno generato attorno alle caselle, vale per tutte le piste).
+
+Ai **rettilinei** (anche con alberelli, cumulo, crepaccio) si possono **sommare** queste
+caratteristiche, nell'editor o nella pista casuale:
 - **Salita**: chi ci passa fa al massimo 4 punti di movimento.
 - **Discesa**: chi parte in discesa va almeno a 5, anche frenando.
-- **Neve fresca**: ogni casella coi cumuli costa 2 punti.
-- **Ghiaccio**: chi entra derivando continua a derivare finché è sul ghiaccio; a fine
-  movimento si scivola avanti di una casella.
-- **Vento** (→ o ←): ogni 2 caselle percorse sulla tessera sposta di una corsia nel verso
-  della manica a vento; contro il bordo è un'ammaccatura.
+- **Vento ←/→**: ogni 2 caselle percorse sulla tessera sposta di una corsia; contro il bordo
+  è un'ammaccatura.
+- **Ghiaccio**: chi entra derivando continua a derivare; a fine movimento si scivola avanti
+  di una casella.
+- **Neve fresca**: le caselle coi cumuli costano 2 punti.
 - **Baita**: chi si ferma sulla casella accanto ripara un'ammaccatura (o una mezza), ma non pesca.
-- **Bivio**: un'isola di abeti chiude la corsia di mezzo; da una parte neve fresca, dall'altra alberelli.
 
-Si trovano nell'editor (gruppo «Fanmade», segnati con ★), nella pista casuale (opzione
-«Fanmade») e nella pista «Fanmade: vento, ghiaccio e pendii». La CPU li gestisce (le regole
-sono dentro il calcolo dei percorsi; la baita la cerca quando ha ammaccature).
-Test: `tests/fan_rules.gd` (una verifica per regola), `tests/gen_fan.gd` (piste casuali).
+Nel file del percorso un pezzo con caratteristiche si scrive così:
+`{"id": "straight_p14a", "mods": {"slope": "up", "wind": "R", "ice": true}}`.
+Il gioco stende sopra la tessera i livelli dipinti (`assets/fan/`, creati da
+`tools/make_fan_tiles.py`), i cartelli all'ingresso (uno per caratteristica) e gli effetti 3D.
+
+Il **bivio** è una tessera a sé (`fan_fork`): un'isola di abeti chiude la corsia di mezzo;
+il corridoio di sinistra ha 4 caselle lunghe (scorciatoia, con un po' di neve fresca), quello
+di destra 6 caselle normali.
+
+Editor: tavolozza compatta, anteprima 3D (si ruota e si avvicina come in partita), pannello
+delle caratteristiche quando è selezionato un rettilineo. Menu: «Dalla lista» o «Pista
+casuale» con difficoltà, lunghezza e fanmade sì/no.
+Test: `tests/fan_rules.gd`, `tests/gen_fan.gd`, `tests/gen_play_fan.gd`.

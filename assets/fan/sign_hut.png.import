@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://rmni6t655gah"
-path="res://.godot/imported/fan_ice.webp-99bec6ca2641ed51b8449339142ad0a8.ctex"
+uid="uid://recpj36ps3xm"
+path="res://.godot/imported/sign_hut.png-1776d8142044710c1d9094ba4efc9212.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/tiles/fan_ice.webp"
-dest_files=["res://.godot/imported/fan_ice.webp-99bec6ca2641ed51b8449339142ad0a8.ctex"]
+source_file="res://assets/fan/sign_hut.png"
+dest_files=["res://.godot/imported/sign_hut.png-1776d8142044710c1d9094ba4efc9212.ctex"]
 
 [params]
 

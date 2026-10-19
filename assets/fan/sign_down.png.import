@@ -2,16 +2,16 @@
 
 importer="texture"
 type="CompressedTexture2D"
-uid="uid://bi0xghnyxpu6b"
-path="res://.godot/imported/fan_up.webp-7d0733432d47196fc0b9354561696583.ctex"
+uid="uid://ya60ydhxvpyd"
+path="res://.godot/imported/sign_down.png-f8a4023f160963d49d45a4c0223fe9e4.ctex"
 metadata={
 "vram_texture": false
 }
 
 [deps]
 
-source_file="res://assets/tiles/fan_up.webp"
-dest_files=["res://.godot/imported/fan_up.webp-7d0733432d47196fc0b9354561696583.ctex"]
+source_file="res://assets/fan/sign_down.png"
+dest_files=["res://.godot/imported/sign_down.png-f8a4023f160963d49d45a4c0223fe9e4.ctex"]
 
 [params]
 

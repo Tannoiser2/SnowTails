@@ -220,7 +220,7 @@ func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 	var speed: int = m["L"] + m["R"] - m["B"]
 	var drift: int = m["R"] - m["L"]
 	var slid := false
-	if course.seg_of(p.cell) == "down" and speed < DOWN_MIN:
+	if course.slope_of(p.cell) == "down" and speed < DOWN_MIN:
 		speed = DOWN_MIN
 		slid = true
 	if speed <= 0:
@@ -233,7 +233,7 @@ func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 		if q != p and not q.wrecked and q.cell >= 0 and q.finish_round == 0:
 			occ[q.cell] = true
 	var res := []
-	var up0: bool = course.seg_of(p.cell) == "up"
+	var up0: bool = course.slope_of(p.cell) == "up"
 	_dfs(p.cell, speed, k, dir, speed, occ, [], 0, res, 0, [], up0, "")
 	if drift == 0 and p.moves > 0:
 		var b := rank_of(p)
@@ -265,7 +265,7 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 		return
 	var c := cell(cur)
 	var kinds := []
-	if course.seg_of(cur) == "ice" and last == "d" and drifts > 0:
+	if course.has_mod(cur, "ice") and last == "d" and drifts > 0:
 		# sul ghiaccio la deriva non si ferma: chi ci entra derivando continua a derivare
 		kinds = ["d"]
 	else:
@@ -293,7 +293,7 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 				res.append(r2)
 				continue
 			var cost := 2 if course.fresh.has(t) else 1
-			var up2: bool = up or course.seg_of(t) == "up"
+			var up2: bool = up or course.slope_of(t) == "up"
 			if cost > steps or (up2 and (total - steps) + cost > UP_MAX):
 				# non ci entra: neve fresca troppo profonda per i punti rimasti, o salita oltre il limite
 				var r3 := _out(path, cur, "", cd, total, bonus_n, sap)
@@ -467,7 +467,7 @@ func _post_move(r: Dictionary, occ: Dictionary) -> void:
 	var end: int = r["end"]
 	var sap: Array = (r["sap"] as Array).duplicate()
 	# ghiaccio: a fine movimento si scivola avanti di una casella
-	if course.seg_of(end) == "ice":
+	if course.has_mod(end, "ice"):
 		var fw: Array = cell(end)["fwd"]
 		if not fw.is_empty():
 			var h := course.heading(end)

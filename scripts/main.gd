@@ -363,6 +363,7 @@ func _scan_courses() -> void:
 var rnd_diff := 1
 var rnd_len := 1
 var rnd_fan := false
+var _last_listed := 0
 var rnd_def := {}
 var _menu_random_box: VBoxContainer
 var _menu_preview: CoursePreview
@@ -379,6 +380,21 @@ func show_menu() -> void:
 	left.add_child(UIKit.title("Snow Tails", 58))
 	left.add_child(UIKit.label("Corsa di slitte con le tessere della tua copia. Uso personale.", 20, UIKit.MUTED))
 	left.add_child(UIKit.heading("Percorso"))
+	# scelta ben visibile: un percorso della lista o una pista casuale
+	var mode_row := HBoxContainer.new()
+	mode_row.add_theme_constant_override("separation", 8)
+	for opt in [[false, "Dalla lista"], [true, "Pista casuale"]]:
+		var mb := UIKit.button(opt[1], _is_random() == opt[0])
+		mb.custom_minimum_size = Vector2(0, 48)
+		mb.pressed.connect(func():
+			if opt[0] and not _is_random():
+				_last_listed = course_idx
+				_menu_pick_course(course_files.size())
+			elif not opt[0] and _is_random():
+				_menu_pick_course(clamp(_last_listed, 0, max(course_files.size() - 1, 0)))
+			show_menu())
+		mode_row.add_child(mb)
+	left.add_child(mode_row)
 	var ob := OptionButton.new()
 	ob.custom_minimum_size = Vector2(0, 60)
 	ob.add_theme_font_size_override("font_size", 22)
@@ -389,9 +405,9 @@ func show_menu() -> void:
 		var nm := c.title if c.title != "" else String(course_files[i]).get_file()
 		var tag := "  ✎" if String(course_files[i]).begins_with("user://") else ""
 		ob.add_item(nm + tag + ("" if ok else "  (da completare)"), i)
-	ob.add_item("Pista casuale", course_files.size())
-	ob.selected = course_idx
+	ob.selected = min(course_idx, course_files.size() - 1)
 	ob.item_selected.connect(_menu_pick_course)
+	ob.visible = not _is_random()
 	left.add_child(ob)
 	_menu_random_box = VBoxContainer.new()
 	_menu_random_box.add_theme_constant_override("separation", 8)
@@ -483,6 +499,7 @@ func _menu_pick_course(i: int) -> void:
 	course_idx = i
 	_menu_build_random()
 	_menu_refresh_info()
+	_menu_refit()
 
 func _menu_build_random() -> void:
 	UIKit.clear(_menu_random_box)
@@ -517,7 +534,8 @@ func _menu_build_random() -> void:
 			rnd_fan = opt[0]
 			rnd_def = {}
 			_menu_build_random()
-			_menu_refresh_info())
+			_menu_refresh_info()
+			_menu_refit())
 		fr.add_child(bf)
 	_menu_random_box.add_child(fr)
 	var again := UIKit.button("Genera un'altra pista")
@@ -525,6 +543,11 @@ func _menu_build_random() -> void:
 		rnd_def = {}
 		_menu_refresh_info())
 	_menu_random_box.add_child(again)
+
+## Dopo un cambiamento nel menu la finestra si riadatta allo schermo.
+func _menu_refit() -> void:
+	if _modal_panel:
+		_fit_modal.call_deferred()
 
 func _menu_set_diff(k: int) -> void:
 	rnd_diff = k
@@ -539,6 +562,7 @@ func _menu_set_len(k: int) -> void:
 	_menu_refresh_info()
 
 func _menu_refresh_info() -> void:
+	_menu_refit()
 	if _is_random():
 		if rnd_def.is_empty() or int(rnd_def.get("difficulty", -1)) != rnd_diff or int(rnd_def.get("length", -1)) != rnd_len or bool(rnd_def.get("fan", false)) != rnd_fan:
 			var gen := CourseGen.new()
@@ -569,6 +593,7 @@ func _menu_refresh_info() -> void:
 func _menu_set_n(n: int) -> void:
 	setup_n = n
 	_menu_rebuild_players()
+	_menu_refit()
 
 func _menu_set_ai(i: int, v: bool) -> void:
 	setup_ai[i] = v
@@ -1520,7 +1545,7 @@ func _stat_grid() -> GridContainer:
 	g.add_theme_constant_override("v_separation", 5)
 	var m := game.mat_after(cur, pending if (phase == "cards" or phase == "dest") else [])
 	var speed: int = max(0, m["L"] + m["R"] - m["B"])
-	if course.seg_of(cur.cell) == "down":
+	if course.slope_of(cur.cell) == "down":
 		speed = max(speed, SledGame.DOWN_MIN)
 	var d: int = m["R"] - m["L"]
 	var c: Dictionary = course.cells[cur.cell]
@@ -1542,17 +1567,19 @@ func _stat_grid() -> GridContainer:
 	if not lp.is_empty() and (float(lp["s"]) - float(c["s"])) / course.cell_len <= 14:
 		var dl := int(round((float(lp["s"]) - float(c["s"])) / course.cell_len))
 		g.add_child(_tile("Salto min. %d" % lp["min"], "fra %d" % max(dl, 0), speed < int(lp["min"]) and dl <= speed))
+	# caratteristiche fanmade qui o poco più avanti (al massimo due riquadri)
 	var sg := _seg_ahead(cur.cell, max(speed, 1) + 3)
 	if not sg.is_empty():
-		var info := {"up": ["Salita", "max %d" % SledGame.UP_MAX], "down": ["Discesa", "min %d" % SledGame.DOWN_MIN],
-			"wind": ["Vento", "→ di lato"], "ice": ["Ghiaccio", "scivola"], "fresh": ["Neve fresca", "costa 2"],
-			"hut": ["Baita", "ripara 1"], "fork": ["Bivio", "scegli"]}
-		var it: Array = info.get(sg["seg"], [sg["seg"], ""])
-		var warn: bool = sg["seg"] == "up" and speed > SledGame.UP_MAX
-		var when := "qui: " if int(sg["dist"]) == 0 else "fra %d: " % int(sg["dist"])
-		if sg["seg"] == "wind":
-			it = ["Vento", "→ a destra" if int(sg["wind"]) > 0 else "← a sinistra"]
-		g.add_child(_tile(it[0], when + String(it[1]), warn))
+		var when := "qui" if int(sg["dist"]) == 0 else "fra %d" % int(sg["dist"])
+		var shown := 0
+		for ft in sg["feats"]:
+			if shown >= 2:
+				break
+			var it: Array = {"up": ["Salita", "max %d" % SledGame.UP_MAX], "down": ["Discesa", "min %d" % SledGame.DOWN_MIN],
+				"windR": ["Vento →", "di lato"], "windL": ["Vento ←", "di lato"], "ice": ["Ghiaccio", "scivola"],
+				"fresh": ["Neve fresca", "costa 2"], "hut": ["Baita", "ripara 1"], "fork": ["Bivio", "scegli"]}.get(ft, [ft, ""])
+			g.add_child(_tile(it[0], "%s: %s" % [when, it[1]], ft == "up" and speed > SledGame.UP_MAX))
+			shown += 1
 	g.add_child(_tile("Mazzo", str(cur.deck.size())))
 	g.add_child(_tile("Scarti", str(cur.discard.size() + cur.used.size())))
 	if _is_mine(cur):
@@ -1572,13 +1599,25 @@ func _stat_grid() -> GridContainer:
 		g.add_child(tb)
 	return g
 
-## Primo segmento fanmade sulla strada (casella attuale compresa) entro n caselle in avanti.
+## Prima tessera con caratteristiche fanmade sulla strada (casella attuale compresa) entro n
+## caselle in avanti: distanza ed elenco delle caratteristiche.
 func _seg_ahead(start: int, n: int) -> Dictionary:
 	var id := start
 	for k in n + 1:
-		var sgn := course.seg_of(id)
-		if sgn != "":
-			return {"seg": sgn, "dist": k, "wind": course.wind_of(id)}
+		var feats := []
+		var sl := course.slope_of(id)
+		if sl != "":
+			feats.append(sl)
+		var w := course.wind_of(id)
+		if w != 0:
+			feats.append("windR" if w > 0 else "windL")
+		for key in ["ice", "fresh", "hut"]:
+			if course.has_mod(id, key):
+				feats.append(key)
+		if String(course.pieces[int(course.cells[id]["piece"])]["face"].get("type", "")) == "fork":
+			feats.append("fork")
+		if not feats.is_empty():
+			return {"feats": feats, "dist": k}
 		var fw: Array = course.cells[id]["fwd"]
 		if fw.is_empty():
 			break

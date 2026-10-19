@@ -47,12 +47,13 @@ func build(def: Dictionary) -> bool:
 	var prev_mid := Vector2.ZERO
 	var prev_dir := Vector2(0, -1)
 	for i in ids.size():
-		var f := FaceDB.load_face(String(ids[i]))
+		var fid := item_id(ids[i])
+		var f := FaceDB.load_face(fid)
 		if f.is_empty():
-			error = "Faccia mancante: " + String(ids[i])
+			error = "Faccia mancante: " + fid
 			return false
 		if not FaceDB.is_mapped(f):
-			var lbl := String(f.get("label", ids[i]))
+			var lbl := String(f.get("label", fid))
 			if not missing.has(lbl):
 				missing.append(lbl)
 		var e_mid := FaceDB.v2(f["entry"]["mid"])
@@ -69,8 +70,9 @@ func build(def: Dictionary) -> bool:
 		prev_mid = xf * x_mid
 		prev_dir = xf.basis_xform(x_dir).normalized()
 		lane_w = float(f.get("lane_width", lane_w))
-		pieces.append({"face": f, "xf": xf, "tex_path": String(f.get("image", "")), "seg": String(f.get("segment", "")),
-			"wind": String(f.get("wind", "")), "h0": 0.0, "h1": 0.0,
+		var mods := item_mods(ids[i]) if can_mod(f) else {}
+		pieces.append({"face": f, "xf": xf, "tex_path": String(f.get("image", "")), "mods": mods,
+			"h0": 0.0, "h1": 0.0,
 			"entry_mid": xf * e_mid, "entry_dir": xf.basis_xform(e_dir).normalized(),
 			"exit_mid": prev_mid, "exit_dir": prev_dir, "cells": []})
 	if not missing.is_empty():
@@ -111,6 +113,7 @@ func build(def: Dictionary) -> bool:
 	_estimate_cell_len()
 	_compute_heights()
 	_compute_sideways()
+	_apply_mod_cells()
 	# giunzioni fra tessere
 	for pi in range(1, pieces.size()):
 		_join(pi - 1, pi)
@@ -148,16 +151,69 @@ func build(def: Dictionary) -> bool:
 		return false
 	return true
 
-## Segmento fanmade della tessera di una casella ("" per le tessere normali).
-func seg_of(id: int) -> String:
-	return String(pieces[int(cells[id]["piece"])]["seg"])
+## Un pezzo del percorso è il nome della tessera, oppure {"id": tessera, "mods": {...}} con le
+## caratteristiche fanmade aggiunte a un rettilineo, che si possono sommare:
+## "slope": "up"/"down", "wind": "L"/"R", "fresh": true, "ice": true, "hut": true.
+static func item_id(item) -> String:
+	return String(item.get("id", "")) if item is Dictionary else String(item)
+
+static func item_mods(item) -> Dictionary:
+	return (item.get("mods", {}) as Dictionary).duplicate() if item is Dictionary else {}
+
+## Le caratteristiche fanmade si aggiungono solo ai rettilinei (anche con alberelli, cumuli…).
+static func can_mod(f: Dictionary) -> bool:
+	return String(f.get("type", "")) == "straight"
+
+## Pendenza della tessera di una casella: "up", "down" o "".
+func slope_of(id: int) -> String:
+	return String(pieces[int(cells[id]["piece"])]["mods"].get("slope", ""))
+
+## La tessera della casella ha questa caratteristica (ice, fresh, hut, wind…)?
+func has_mod(id: int, key: String) -> bool:
+	var v = pieces[int(cells[id]["piece"])]["mods"].get(key, null)
+	if v == null:
+		return false
+	if v is bool:
+		return v
+	return String(v) != ""
 
 ## Vento della tessera di una casella: +1 spinge a destra, -1 a sinistra, 0 niente vento.
 func wind_of(id: int) -> int:
-	var pc: Dictionary = pieces[int(cells[id]["piece"])]
-	if pc["seg"] != "wind":
+	var w := String(pieces[int(cells[id]["piece"])]["mods"].get("wind", ""))
+	if w == "":
 		return 0
-	return -1 if String(pc["wind"]) == "L" else 1
+	return -1 if w == "L" else 1
+
+## Caselle della tessera per colonna (0 = ingresso) e corsia (0..4 da sinistra), sui rettilinei.
+func grid_cell(pi: int, col: int, lane: int) -> int:
+	var pc: Dictionary = pieces[pi]
+	var d: Vector2 = (pc["exit_mid"] - pc["entry_mid"]).normalized()
+	var right := Vector2(-d.y, d.x)
+	var target: Vector2 = pc["entry_mid"] + d * cell_len * (col + 0.5) + right * lane_w * (lane - 2)
+	var best := -1
+	var bd := cell_len * 0.45
+	for id in pc["cells"]:
+		var dd: float = (cells[id]["pos"] - target).length()
+		if dd < bd:
+			bd = dd
+			best = id
+	return best
+
+## Neve fresca e baita aggiunte a un rettilineo: caselle scelte con uno schema fisso.
+const FRESH_PATTERN := [[1, 0], [2, 0], [2, 1], [3, 3], [3, 4], [4, 4], [4, 0]]
+const HUT_CELL := [3, 0]
+func _apply_mod_cells() -> void:
+	for pi in pieces.size():
+		var mods: Dictionary = pieces[pi]["mods"]
+		if mods.get("fresh", false):
+			for cl in FRESH_PATTERN:
+				var id := grid_cell(pi, cl[0], cl[1])
+				if id >= 0 and not saplings.has(id) and not crevasse.has(id):
+					fresh[id] = true
+		if mods.get("hut", false):
+			var h := grid_cell(pi, HUT_CELL[0], HUT_CELL[1])
+			if h >= 0:
+				huts[h] = true
 
 ## Caselle accanto (stessa colonna, corsia a destra o a sinistra) sulle tessere dritte:
 ## servono al vento che sposta la slitta di lato.
@@ -184,9 +240,10 @@ func _compute_heights() -> void:
 	var h := BASE
 	for pc in pieces:
 		pc["h0"] = h
-		if pc["seg"] == "up":
+		var sl := String(pc["mods"].get("slope", ""))
+		if sl == "up":
 			h += RISE
-		elif pc["seg"] == "down":
+		elif sl == "down":
 			h = max(h - RISE, BASE)
 		pc["h1"] = h
 

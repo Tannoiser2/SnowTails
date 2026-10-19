@@ -21,8 +21,8 @@ func _face(id: String) -> Dictionary:
 	return _faces[id]
 
 ## Restituisce la definizione del percorso, o {} se non ci riesce.
-## fan: aggiunge anche i segmenti fanmade (salite e discese, vento, ghiaccio, neve fresca, baita, bivio).
-const FAN := ["fan_ice", "fan_wind", "fan_wind_l", "fan_fresh", "fan_hut", "fan_fork"]
+## fan: aggiunge le caratteristiche fanmade ai rettilinei (pendenza, vento, ghiaccio, neve
+## fresca, baita, anche insieme) e qualche bivio.
 var fan := false
 
 func generate(diff: int, length: int, seed_value := 0, with_fan := false) -> Dictionary:
@@ -86,18 +86,13 @@ func _try(diff: int, length: int) -> Array:
 			options.append(["U", 1.5 + diff * 0.7])
 		if straights_left > 0:
 			options.append(["S", 3.0 - diff * 0.6])
+		if fan and i >= leading and i < n_mid - 1:
+			options.append(["F", 0.5])
 		if options.is_empty():
 			return []
 		var pick := _weighted(options)
 		var cands := []
-		if pick == "S" and fan and i >= leading and rng.randf() < 0.5:
-			if high and (rng.randf() < 0.45 or i >= n_mid - 2):
-				cands.append("fan_down")
-			elif not high and rng.randf() < 0.3 and i < n_mid - 2:
-				cands.append("fan_up")
-			else:
-				cands.append(FAN[rng.randi_range(0, FAN.size() - 1)])
-		if pick == "S" and cands.is_empty():
+		if pick == "S":
 			var use_special: bool = rng.randf() < p_special and i >= leading
 			if use_special:
 				var ks: Array = kinds_ok.duplicate()
@@ -108,6 +103,13 @@ func _try(diff: int, length: int) -> Array:
 						break
 			if cands.is_empty() and plain.size() > 0:
 				cands.append(plain[0])
+			# caratteristiche fanmade sommate al rettilineo
+			if fan and i >= leading and not cands.is_empty() and rng.randf() < 0.6:
+				var mods := _random_mods(high, i >= n_mid - 2, i < n_mid - 2)
+				if not mods.is_empty():
+					cands[0] = {"id": cands[0], "mods": mods}
+		elif pick == "F":
+			cands.append("fan_fork")
 		else:
 			var sides := ["L", "R"]
 			sides.shuffle()
@@ -117,11 +119,15 @@ func _try(diff: int, length: int) -> Array:
 				else:
 					cands.append("uturn_L_p01" if sd == "L" else "uturn_R_p02")
 		var ok := false
-		for fid in cands:
+		for item in cands:
+			var fid := Course.item_id(item)
 			var pl := _place(fid, placed.size(), mid, dir)
 			if pl.is_empty() or _collides(pl["cells"], placed):
 				continue
-			seq.append(fid)
+			seq.append(item)
+			var sl := String(Course.item_mods(item).get("slope", ""))
+			if sl == "up": high = true
+			if sl == "down": high = false
 			placed.append(pl["cells"])
 			mid = pl["mid"]
 			dir = pl["dir"]
@@ -129,10 +135,8 @@ func _try(diff: int, length: int) -> Array:
 			var f := _face(fid)
 			var t := String(f.get("type", ""))
 			if f.get("fanmade", false):
-				# i segmenti fanmade non sono pezzi della scatola: non consumano rettilinei
+				# il bivio non è un pezzo della scatola: non consuma rettilinei
 				gap += 1
-				if fid == "fan_up": high = true
-				if fid == "fan_down": high = false
 			elif t == "straight":
 				straights_left -= 1
 				gap += 1
@@ -155,17 +159,35 @@ func _try(diff: int, length: int) -> Array:
 	# arrivo e rettilineo di fuga (prima si scende, se la pista è ancora in alto)
 	var tail := ["finish_p21", plain[0] if plain.size() > 0 else "straight_p16a"]
 	if high:
-		tail.push_front("fan_down")
-	for fid in tail:
+		tail.push_front({"id": plain[1] if plain.size() > 1 else "straight_p20b", "mods": {"slope": "down"}})
+	for item in tail:
+		var fid := Course.item_id(item)
 		var pl := _place(fid, placed.size(), mid, dir)
 		if pl.is_empty() or _collides(pl["cells"], placed):
 			return []
-		seq.append(fid)
+		seq.append(item)
 		placed.append(pl["cells"])
 		mid = pl["mid"]
 		dir = pl["dir"]
 	start_id = "start_p22" if first_turn == "R" else "start_p21"
 	return [start_id] + seq
+
+## Caratteristiche casuali per un rettilineo: si sommano; le salite sono sempre seguite da una discesa.
+func _random_mods(high: bool, near_end: bool, can_climb: bool) -> Dictionary:
+	var m := {}
+	if high and (near_end or rng.randf() < 0.45):
+		m["slope"] = "down"
+	elif not high and can_climb and rng.randf() < 0.3:
+		m["slope"] = "up"
+	if rng.randf() < 0.3:
+		m["wind"] = "L" if rng.randf() < 0.5 else "R"
+	if rng.randf() < 0.2:
+		m["ice"] = true
+	if rng.randf() < 0.25:
+		m["fresh"] = true
+	if rng.randf() < 0.12:
+		m["hut"] = true
+	return m
 
 func _weighted(options: Array) -> String:
 	var tot := 0.0
@@ -223,14 +245,15 @@ func _finish_reachable(c: Course) -> bool:
 
 func _summary(seq: Array) -> String:
 	var n := {"corner": 0, "uturn": 0, "straight": 0, "saplings": 0, "snowdrift": 0, "chasm": 0, "leap": 0, "fan": 0}
-	for fid in seq:
-		var f := _face(fid)
+	for item in seq:
+		var f := _face(Course.item_id(item))
+		if not Course.item_mods(item).is_empty():
+			n["fan"] += 1
 		var t := String(f.get("type", ""))
 		if n.has(t): n[t] += 1
 		var sp := String(f.get("special", ""))
 		if f.get("fanmade", false):
 			n["fan"] += 1
-			n["straight"] -= 1
 		elif n.has(sp): n[sp] += 1
 	var pl := func(k: int, one: String, many: String) -> String: return "%d %s" % [k, one if k == 1 else many]
 	var parts := [pl.call(n["corner"], "curva", "curve"), pl.call(n["uturn"], "inversione", "inversioni"), pl.call(n["straight"], "rettilineo", "rettilinei")]
@@ -238,5 +261,5 @@ func _summary(seq: Array) -> String:
 		if n[k[0]] > 0:
 			parts.append("%d %s" % [n[k[0]], k[1]] if k[0] != "leap" else k[1])
 	if n["fan"] > 0:
-		parts.append("%d segment%s fanmade" % [n["fan"], "o" if n["fan"] == 1 else "i"])
+		parts.append("%d tratt%s fanmade" % [n["fan"], "o" if n["fan"] == 1 else "i"])
 	return "Pista generata: " + ", ".join(parts) + "."

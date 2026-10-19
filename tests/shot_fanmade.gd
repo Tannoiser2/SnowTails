@@ -18,7 +18,10 @@ func _init() -> void:
 	await create_timer(0.5).timeout
 	var names := {}
 	for pi in c.pieces.size():
-		var seg := String(c.pieces[pi]["seg"])
+		var mods: Dictionary = c.pieces[pi]["mods"]
+		var seg := "_".join(mods.keys())
+		if String(c.pieces[pi]["face"].get("type", "")) == "fork":
+			seg = "fork"
 		if seg == "":
 			continue
 		# una slitta sulla tessera, per avere la misura
@@ -29,9 +32,9 @@ func _init() -> void:
 		b.target_goal = BoardView3D.to3(mid)
 		b.target = b.target_goal
 		var d: Vector2 = f["dir"]
-		b.yaw_goal = BoardView3D.yaw_of(d) + (0.9 if seg in ["up", "down"] else 0.5)
+		b.yaw_goal = BoardView3D.yaw_of(d) + (0.9 if mods.has("slope") else 0.5)
 		b.yaw = b.yaw_goal
-		b.pitch = deg_to_rad(24 if seg in ["up", "down"] else 38)
+		b.pitch = deg_to_rad(24 if mods.has("slope") else 38)
 		b.dist_goal = 5.5
 		b.dist = 5.5
 		await create_timer(1.2).timeout
@@ -43,7 +46,7 @@ func _init() -> void:
 		print("shot ", seg)
 	# vista d'insieme di lato per vedere il dislivello
 	var a: Vector2 = c.pieces[2]["entry_mid"]
-	var z: Vector2 = c.pieces[7]["exit_mid"]
+	var z: Vector2 = c.pieces[6]["exit_mid"]
 	b.target_goal = BoardView3D.to3((a + z) * 0.5, 0.3)
 	b.target = b.target_goal
 	b.yaw_goal = BoardView3D.yaw_of((z - a).normalized()) + PI * 0.32

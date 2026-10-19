@@ -12,9 +12,9 @@ func _init() -> void:
 		if c.build(d):
 			okn += 1
 			for pid in d["pieces"]:
-				if String(pid).begins_with("fan_"): fans += 1
+				if pid is Dictionary or String(pid).begins_with("fan_"): fans += 1
 			var last_h: float = c.pieces[c.finish_piece]["h0"]
-			if last_h > 0.01:
+			if last_h > Course.BASE + 0.01:
 				print("ATTENZIONE arrivo in alto: ", d["pieces"])
 	print("PISTE FANMADE valide %d/12, segmenti fanmade in tutto %d" % [okn, fans])
 	quit()

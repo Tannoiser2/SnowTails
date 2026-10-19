@@ -1,8 +1,8 @@
 class_name SegmentFx
 extends RefCounted
-## Effetti 3D dei segmenti fanmade: vento (scie e neve sollevata), neve fresca (nevicata e
-## cumuli), ghiaccio (lucido che riflette il sole), baita (con il fumo dal camino),
-## e le fiancate di neve sotto le tessere rialzate da salite e discese.
+## Effetti 3D delle caratteristiche fanmade dei rettilinei (si possono sommare): pendenza,
+## vento (scie, neve sollevata, manica a vento), neve fresca (nevicata e cumuli), ghiaccio
+## (lucido e luccichii), baita (con il fumo); il bivio; il terreno di neve attorno alla pista.
 
 const HUT_GLB := "res://assets/models/hut.glb"
 static var _mats := {}
@@ -16,34 +16,121 @@ static func frame(c: Course, pi: int) -> Dictionary:
 	return {"a": a, "b": b, "mid": (a + b) * 0.5, "dir": d, "right": Vector2(-d.y, d.x),
 		"len": (b - a).length(), "half": c.lane_w * 2.5}
 
-## Nodo orientato sulla tessera: X locale = senso di marcia, Z locale = destra.
-static func anchor(c: Course, pi: int, at: Vector2, y_off := 0.0) -> Node3D:
+## Nodo orientato sulla tessera: X locale = senso di marcia, Z locale = destra;
+## sulle salite e discese è inclinato come il pendio.
+static func anchor(c: Course, pi: int, at: Vector2, y_off := 0.0, tilt := true) -> Node3D:
 	var f := frame(c, pi)
 	var n := Node3D.new()
 	n.position = BoardView3D.to3(at, y_off)
 	var d: Vector2 = f["dir"]
-	n.rotation.y = atan2(-d.y, d.x)
+	var pc: Dictionary = c.pieces[pi]
+	var a := atan2(float(pc["h1"]) - float(pc["h0"]), f["len"] * BoardView3D.S) if tilt else 0.0
+	n.basis = Basis(Vector3.UP, atan2(-d.y, d.x)) * Basis(Vector3(0, 0, 1), a)
 	return n
 
 static func build(parent: Node3D, c: Course) -> void:
 	for pi in c.pieces.size():
 		var pc: Dictionary = c.pieces[pi]
-		match String(pc["seg"]):
-			"wind":
-				_wind(parent, c, pi)
-			"fresh":
-				_fresh(parent, c, pi)
-			"ice":
-				_ice(parent, c, pi)
-			"hut":
-				_hut(parent, c, pi)
-			"fork":
-				_fork(parent, c, pi)
+		var mods: Dictionary = pc["mods"]
+		var kinds := []
+		var sl := String(mods.get("slope", ""))
+		if sl != "":
+			parent.add_child(_band(c, pi, sl, 0.016))
+			kinds.append(sl)
+		if String(mods.get("wind", "")) != "":
+			parent.add_child(_band(c, pi, "wind", 0.018, String(mods["wind"]) == "L"))
+			_wind(parent, c, pi)
+			kinds.append("wind")
+		if mods.get("ice", false):
+			parent.add_child(_band(c, pi, "ice", 0.02))
+			_ice(parent, c, pi)
+			kinds.append("ice")
+		if mods.get("fresh", false):
+			_fresh(parent, c, pi)
+			kinds.append("fresh")
+		if mods.get("hut", false):
+			_hut(parent, c, pi)
+			kinds.append("hut")
+		if not kinds.is_empty():
+			_signs(parent, c, pi, kinds)
+		if String(pc["face"].get("type", "")) == "fork":
+			_fork(parent, c, pi)
 		# cumuli di neve fresca su qualunque tessera ne abbia (neve fresca, bivio)
 		for id in pc["cells"]:
 			if c.fresh.has(id):
 				_mounds(parent, c, pi)
 				break
+
+# ---------- livelli dipinti e cartelli ----------
+static var _tex := {}
+static func _fan_tex(name: String) -> Texture2D:
+	if not _tex.has(name):
+		var path := "res://assets/fan/%s.png" % name
+		_tex[name] = load(path) if ResourceLoader.exists(path) else null
+	return _tex[name]
+
+## Livello trasparente steso sulla fascia delle corsie, che segue il pendio della tessera.
+static func _band(c: Course, pi: int, kind: String, y_off: float, flip := false) -> MeshInstance3D:
+	var f := frame(c, pi)
+	var st := SurfaceTool.new()
+	st.begin(Mesh.PRIMITIVE_TRIANGLES)
+	var nu := 16
+	var S := BoardView3D.S
+	for i in nu:
+		for q in [[i, 0], [i + 1, 0], [i + 1, 1], [i, 0], [i + 1, 1], [i, 1]]:
+			var u := float(q[0]) / nu
+			var v := float(q[1])
+			var p2: Vector2 = f["a"] + (f["b"] - f["a"]) * u + f["right"] * (v * 2.0 - 1.0) * f["half"]
+			st.set_uv(Vector2(u, 1.0 - v if flip else v))
+			st.add_vertex(Vector3(p2.x * S, c.piece_height(pi, p2) + y_off, p2.y * S))
+	var mi := MeshInstance3D.new()
+	mi.mesh = st.commit()
+	var m := StandardMaterial3D.new()
+	m.albedo_texture = _fan_tex(kind)
+	m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
+	m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	m.cull_mode = BaseMaterial3D.CULL_DISABLED
+	m.texture_filter = BaseMaterial3D.TEXTURE_FILTER_LINEAR_WITH_MIPMAPS_ANISOTROPIC
+	mi.material_override = m
+	mi.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
+	return mi
+
+## Cartelli all'ingresso, come quelli delle curve: doppia linea rossa e un disco per ogni
+## caratteristica, sui due bordi della pista.
+static func _signs(parent: Node3D, c: Course, pi: int, kinds: Array) -> void:
+	var f := frame(c, pi)
+	var S := BoardView3D.S
+	var red := StandardMaterial3D.new()
+	red.albedo_color = Color("c8322a")
+	red.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+	for off in [4.0, 10.0]:
+		var at: Vector2 = f["a"] + f["dir"] * off
+		var root := anchor(c, pi, at, 0.024)
+		parent.add_child(root)
+		var bar := MeshInstance3D.new()
+		var bm := BoxMesh.new()
+		bm.size = Vector3(0.03, 0.004, (f["half"] * 2.0 + 16.0) * S)
+		bar.mesh = bm
+		bar.material_override = red
+		root.add_child(bar)
+	for side in [-1.0, 1.0]:
+		for k in kinds.size():
+			var at: Vector2 = f["a"] + f["dir"] * (c.cell_len * 0.32 + k * c.lane_w * 1.15) + f["right"] * side * (f["half"] + c.lane_w * 0.18)
+			var root := anchor(c, pi, at, 0.03)
+			parent.add_child(root)
+			var q := MeshInstance3D.new()
+			var pm := PlaneMesh.new()
+			pm.size = Vector2(0.58, 0.58)
+			q.mesh = pm
+			var m := StandardMaterial3D.new()
+			m.albedo_texture = _fan_tex("sign_" + String(kinds[k]))
+			m.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA_SCISSOR
+			m.alpha_scissor_threshold = 0.4
+			m.shading_mode = BaseMaterial3D.SHADING_MODE_UNSHADED
+			q.material_override = m
+			# il simbolo si legge stando sulla pista, rivolto verso chi arriva
+			q.rotation.y = -PI * 0.5
+			root.add_child(q)
 
 # ---------- materiali ----------
 static func _flake_mat(alpha := 0.9) -> StandardMaterial3D:
@@ -71,7 +158,7 @@ static func _fade_ramp(peak := 1.0) -> Gradient:
 # ---------- vento ----------
 static func _wind(parent: Node3D, c: Course, pi: int) -> void:
 	var f := frame(c, pi)
-	var side := 1.0 if String(c.pieces[pi]["wind"]) != "L" else -1.0
+	var side := 1.0 if String(c.pieces[pi]["mods"].get("wind", "R")) != "L" else -1.0
 	var L: float = f["len"] * BoardView3D.S
 	var W: float = f["half"] * 2.0 * BoardView3D.S
 	var root := anchor(c, pi, f["mid"], 0.0)
