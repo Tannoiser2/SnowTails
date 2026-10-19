@@ -7,6 +7,7 @@ var legs: Array = []      # [pivot, fase]
 var tails: Array = []
 var heads: Array = []
 var run := 0.0            # 0 = fermo, 1 = di corsa
+var slope := 0.0          # pendenza del terreno sotto la slitta (salite e discese)
 var _shake := 0.0
 var _t := 0.0
 var _glb: Node3D = null   # modello importato (assets/models/team.glb), se presente
@@ -244,6 +245,7 @@ func _update_ropes() -> void:
 		r.basis = Basis(x, y * l, x.cross(y))
 
 func _process_animated(delta: float) -> void:
+	_rig.rotation.x = lerp(_rig.rotation.x, slope, 1.0 - exp(-8.0 * delta))
 	# cani: galoppo quando la slitta corre, fermi e scodinzolanti quando è ferma
 	for dd in _dogs:
 		var d: Node3D = dd[0]

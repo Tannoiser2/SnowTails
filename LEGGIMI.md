@@ -257,3 +257,12 @@ arrivo possibile.
 ## Font
 Titoli e pulsanti principali: Luckiest Guy (Apache 2.0). Testo: Nunito (SIL Open Font
 License). Le licenze sono in `assets/fonts/`.
+
+## Segmenti fanmade (anteprima grafica)
+`tools/make_fan_tiles.py` crea i segmenti partendo dai rettilinei scansionati: cartelli
+all'ingresso nello stile delle curve (disco bordato di rosso, doppia linea rossa) e ritocchi
+dipinti (ghiaccio, tracce in salita, solchi in discesa, sastrugi del vento). Il resto è 3D:
+salite e discese alzano davvero la pista (le slitte si inclinano), vento con scie e neve
+sollevata e una manica a vento animata, neve fresca con nevicata e cumuli, ghiaccio lucido
+con luccichii, baita (modello Meshy) con il fumo dal camino. Pista di prova: «Fanmade:
+vento, ghiaccio e pendii». Per ora è solo l'aspetto: le regole dei segmenti verranno dopo.

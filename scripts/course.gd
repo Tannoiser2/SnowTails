@@ -19,6 +19,11 @@ var start_cells: Array = []
 var saplings: Array = []    # caselle con un alberello all'inizio della gara
 var crevasse := {}          # caselle della spaccatura (Leap of Death) -> velocità minima
 var leaps: Array = []       # {piece, min, s}
+## Segmenti fanmade: tipo di ogni tessera ("up", "down", "wind", "ice", "fresh", "hut" o "")
+var fresh := {}             # caselle con neve fresca
+var huts := {}              # caselle della baita
+## Altezza (unità del mondo 3D) all'ingresso e all'uscita di ogni tessera: salite e discese
+const RISE := 1.1
 var cell_len := 97.0
 var lane_w := 53.8
 var missing: Array = []
@@ -34,7 +39,7 @@ func load_file(path: String) -> bool:
 func build(def: Dictionary) -> bool:
 	title = String(def.get("name", "Percorso"))
 	note = String(def.get("note", ""))
-	pieces.clear(); cells.clear(); limits.clear(); corners.clear(); missing.clear(); start_cells.clear(); saplings.clear(); crevasse.clear(); leaps.clear()
+	pieces.clear(); cells.clear(); fresh.clear(); huts.clear(); limits.clear(); corners.clear(); missing.clear(); start_cells.clear(); saplings.clear(); crevasse.clear(); leaps.clear()
 	finish_piece = -1
 	var ids: Array = def.get("pieces", [])
 	var prev_mid := Vector2.ZERO
@@ -62,7 +67,8 @@ func build(def: Dictionary) -> bool:
 		prev_mid = xf * x_mid
 		prev_dir = xf.basis_xform(x_dir).normalized()
 		lane_w = float(f.get("lane_width", lane_w))
-		pieces.append({"face": f, "xf": xf, "tex_path": String(f.get("image", "")),
+		pieces.append({"face": f, "xf": xf, "tex_path": String(f.get("image", "")), "seg": String(f.get("segment", "")),
+			"wind": String(f.get("wind", "")), "h0": 0.0, "h1": 0.0,
 			"entry_mid": xf * e_mid, "entry_dir": xf.basis_xform(e_dir).normalized(),
 			"exit_mid": prev_mid, "exit_dir": prev_dir, "cells": []})
 	if not missing.is_empty():
@@ -82,6 +88,12 @@ func build(def: Dictionary) -> bool:
 			_link(base + int(l[0]), base + int(l[1]))
 		for si in f.get("saplings", []):
 			saplings.append(base + int(si))
+		for fi in f.get("fresh", []):
+			if int(fi) >= 0:
+				fresh[base + int(fi)] = true
+		for hi in f.get("hut", []):
+			if int(hi) >= 0:
+				huts[base + int(hi)] = true
 		var lm := int(f.get("leap_min", 0))
 		for ci in f.get("crevasse", []):
 			crevasse[base + int(ci)] = lm if lm > 0 else 5
@@ -95,6 +107,7 @@ func build(def: Dictionary) -> bool:
 		if turn != "":
 			corners.append({"piece": pi, "turn": turn})
 	_estimate_cell_len()
+	_compute_heights()
 	# giunzioni fra tessere
 	for pi in range(1, pieces.size()):
 		_join(pi - 1, pi)
@@ -131,6 +144,57 @@ func build(def: Dictionary) -> bool:
 		error = "Il percorso non ha la tessera d'arrivo"
 		return false
 	return true
+
+## Quota di ogni tessera: le salite alzano la pista di RISE, le discese la abbassano.
+func _compute_heights() -> void:
+	var h := 0.0
+	for pc in pieces:
+		pc["h0"] = h
+		if pc["seg"] == "up":
+			h += RISE
+		elif pc["seg"] == "down":
+			h = max(h - RISE, 0.0)
+		pc["h1"] = h
+
+## Quota della tessera pi nel punto p (coordinate del percorso): costante, o in pendenza
+## lineare dall'ingresso all'uscita per salite e discese.
+func piece_height(pi: int, p: Vector2) -> float:
+	var pc: Dictionary = pieces[pi]
+	if float(pc["h0"]) == float(pc["h1"]):
+		return float(pc["h0"])
+	var a: Vector2 = pc["entry_mid"]
+	var b: Vector2 = pc["exit_mid"]
+	var ab := b - a
+	var t: float = clamp((p - a).dot(ab) / max(ab.length_squared(), 0.001), 0.0, 1.0)
+	return lerp(float(pc["h0"]), float(pc["h1"]), t)
+
+## Quota del terreno in un punto qualsiasi: la tessera che lo contiene (prima le pendenze).
+func height_at(p: Vector2) -> float:
+	var best := -1
+	var bd := INF
+	for pass_slope in [true, false]:
+		for pi in pieces.size():
+			var pc: Dictionary = pieces[pi]
+			var slope: bool = float(pc["h0"]) != float(pc["h1"])
+			if slope != pass_slope:
+				continue
+			var loc: Vector2 = (pc["xf"] as Transform2D).affine_inverse() * p
+			var sz := FaceDB.v2(pc["face"].get("size", [600, 450]))
+			if loc.x >= 0.0 and loc.y >= 0.0 and loc.x <= sz.x and loc.y <= sz.y:
+				return piece_height(pi, p)
+		if best >= 0:
+			break
+	for pi in pieces.size():
+		var pc: Dictionary = pieces[pi]
+		var d: float = min((pc["entry_mid"] - p).length(), (pc["exit_mid"] - p).length())
+		if d < bd:
+			bd = d
+			best = pi
+	return piece_height(best, p) if best >= 0 else 0.0
+
+## Quota di una casella (calcolata sulla sua tessera, senza ambiguità).
+func cell_height(id: int) -> float:
+	return piece_height(int(cells[id]["piece"]), cells[id]["pos"])
 
 func _link(a: int, b: int) -> void:
 	if a == b or cells[a]["fwd"].has(b):

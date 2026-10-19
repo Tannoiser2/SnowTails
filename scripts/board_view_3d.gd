@@ -47,8 +47,14 @@ var _t := 0.0
 ## Tempo di ogni passo durante il movimento delle slitte (secondi per casella).
 const STEP_T := 0.35
 
+## Percorso usato per la quota del terreno (salite e discese fanmade).
+static var hcourse: Course = null
+
 static func to3(v: Vector2, y := 0.0) -> Vector3:
-	return Vector3(v.x * S, y, v.y * S)
+	var h := 0.0
+	if hcourse != null:
+		h = hcourse.height_at(v)
+	return Vector3(v.x * S, y + h, v.y * S)
 
 func _build_env() -> void:
 	if _env_built:
@@ -124,6 +130,8 @@ func setup(c: Course, g: SledGame) -> void:
 		_teams[id]["label"].queue_free()
 		_teams[id]["ring"].queue_free()
 	_teams.clear()
+	BoardView3D.hcourse = c
+	_slopes_cache = -1
 	_tiles = Node3D.new()
 	add_child(_tiles)
 	_marks = Node3D.new()
@@ -143,9 +151,13 @@ func setup(c: Course, g: SledGame) -> void:
 		sm.transparency = BaseMaterial3D.TRANSPARENCY_ALPHA
 		sm.cull_mode = BaseMaterial3D.CULL_DISABLED
 		sh.material_override = sm
-		sh.position = Vector3(0.06, -0.006, 0.08)
+		# ombra della tessera, spostata e un po' più in basso; sui pendii più in basso ancora,
+		# altrimenti lo spostamento la farebbe affiorare sopra la tessera
+		var sloped: bool = float(c.pieces[i]["h0"]) != float(c.pieces[i]["h1"])
+		sh.position = Vector3(0.06, -0.04 if sloped else -0.006, 0.08)
 		sh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_tiles.add_child(sh)
+	SegmentFx.build(_tiles, c)
 	_saps = Node3D.new()
 	add_child(_saps)
 	if _fx == null:
@@ -187,14 +199,25 @@ func _tile_mesh(pc: Dictionary, y: float) -> MeshInstance3D:
 	var isc := float(pc["face"].get("img_scale", 1.0))
 	var sz := (tex.get_size() / isc) if tex else Vector2(100, 100)
 	var xf: Transform2D = pc["xf"]
-	var corners := [Vector2(0, 0), Vector2(sz.x, 0), Vector2(sz.x, sz.y), Vector2(0, sz.y)]
-	var uvs := [Vector2(0, 0), Vector2(1, 0), Vector2(1, 1), Vector2(0, 1)]
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
-	for idx in [0, 1, 2, 0, 2, 3]:
-		st.set_normal(Vector3.UP)
-		st.set_uv(uvs[idx])
-		st.add_vertex(to3(xf * corners[idx], y))
+	# griglia di quadratini: sulle salite e discese ogni vertice prende la quota del pendio
+	var pi: int = course.pieces.find(pc) if course != null else -1
+	var slope: bool = pi >= 0 and float(pc.get("h0", 0.0)) != float(pc.get("h1", 0.0))
+	var flat_h: float = float(pc.get("h0", 0.0))
+	var nx := 16 if slope else 1
+	var ny := 16 if slope else 1
+	for j in ny:
+		for i in nx:
+			var q := [Vector2(i, j), Vector2(i + 1, j), Vector2(i + 1, j + 1), Vector2(i, j + 1)]
+			for idx in [0, 1, 2, 0, 2, 3]:
+				var uv: Vector2 = q[idx] / Vector2(nx, ny)
+				var p2: Vector2 = xf * (uv * sz)
+				var hh: float = course.piece_height(pi, p2) if slope else flat_h
+				st.set_normal(Vector3.UP)
+				st.set_uv(uv)
+				st.add_vertex(Vector3(p2.x * S, y + hh, p2.y * S))
+
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
 	var m := StandardMaterial3D.new()
@@ -583,6 +606,26 @@ func frame(points: Array, min_dist := 3.6, force := false) -> void:
 
 var _track_dir := Vector2.ZERO
 
+## Pendenza sotto la slitta (radianti, positiva in salita): serve per inclinare il modello.
+func _slope_under(node: Node3D) -> float:
+	if course == null or not _has_slopes():
+		return 0.0
+	var ry := node.rotation.y
+	var f := Vector2(-sin(ry), -cos(ry)) * 0.3
+	var p := Vector2(node.position.x, node.position.z)
+	var h1 := course.height_at((p + f) / S)
+	var h0 := course.height_at((p - f) / S)
+	return atan2(h1 - h0, 0.6)
+
+var _slopes_cache := -1
+func _has_slopes() -> bool:
+	if _slopes_cache < 0:
+		_slopes_cache = 0
+		for pc in course.pieces:
+			if float(pc["h0"]) != float(pc["h1"]):
+				_slopes_cache = 1
+	return _slopes_cache == 1
+
 ## Obiettivo della telecamera mentre le slitte si muovono: il centro del gruppo che corre,
 ## un po' avanti nel senso di marcia; distanza in base a quanto è sparpagliato il gruppo;
 ## rotazione verso la direzione media, filtrata per non ondeggiare a ogni curva.
@@ -656,6 +699,7 @@ func _process(delta: float) -> void:
 				node.position = rp["pos"]
 				node.rotation.y = lerp_angle(node.rotation.y, -yaw_of(rp["dir"]), 1.0 - exp(-14.0 * delta))
 				node.run = move_toward(node.run, float(rp["run"]), delta * 5.0)
+				node.slope = _slope_under(node)
 				(t["label"] as Label3D).position = node.position + Vector3(0, 0.42, 0)
 				(t["ring"] as MeshInstance3D).visible = false
 				continue
@@ -671,6 +715,7 @@ func _process(delta: float) -> void:
 			else:
 				node.rotation.y = lerp_angle(node.rotation.y, -yaw_of(_heading_of(p.cell)), 1.0 - exp(-4.0 * delta))
 			node.run = move_toward(node.run, 1.0 if moving else 0.0, delta * 4.0)
+			node.slope = _slope_under(node)
 			var lb: Label3D = t["label"]
 			lb.position = node.position + Vector3(0, 0.42, 0)
 			var ring: MeshInstance3D = t["ring"]
