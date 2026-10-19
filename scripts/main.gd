@@ -952,7 +952,7 @@ func start_replay() -> void:
 			for k in range(1, pts.size()):
 				lens.append(lens[k - 1] + (pts[k] as Vector3).distance_to(pts[k - 1]))
 			paths.append({"mv": mv, "pts": pts, "lens": lens})
-		board.frame(pts_all, 3.6)      # solo se «Segui» è attivo
+		# la telecamera segue da sola il gruppo in movimento (board._track_moving), senza scatti fra i giri
 		var dur := 2.8
 		var t: float = max(replay_carry, 0.0)
 		replay_carry = 0.0

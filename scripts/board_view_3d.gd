@@ -581,6 +581,40 @@ func frame(points: Array, min_dist := 3.6, force := false) -> void:
 	var span := (mx - mn).length() * S
 	dist_goal = clamp(span * 1.25 + 1.6, min_dist, 16.0)
 
+var _track_dir := Vector2.ZERO
+
+## Obiettivo della telecamera mentre le slitte si muovono: il centro del gruppo che corre,
+## un po' avanti nel senso di marcia; distanza in base a quanto è sparpagliato il gruppo;
+## rotazione verso la direzione media, filtrata per non ondeggiare a ogni curva.
+func _track_moving(delta: float) -> void:
+	var pts := []
+	var dir_sum := Vector2.ZERO
+	for pid in replay:
+		var rp: Dictionary = replay[pid]
+		if float(rp.get("run", 0.0)) > 0.3:
+			pts.append(rp["pos"])
+			dir_sum += rp["dir"]
+	if pts.is_empty():
+		for pid in replay:
+			var q = game.players[pid] if pid < game.players.size() else null
+			if q != null and not q.wrecked:
+				pts.append(replay[pid]["pos"])
+	if pts.is_empty():
+		return
+	var mn: Vector3 = pts[0]
+	var mx: Vector3 = pts[0]
+	for p in pts:
+		mn = mn.min(p)
+		mx = mx.max(p)
+	if dir_sum.length() > 0.01:
+		_track_dir = _track_dir.lerp(dir_sum.normalized(), 1.0 - exp(-2.0 * delta))
+	var lead := Vector3(_track_dir.x, 0, _track_dir.y) * 0.35
+	target_goal = (mn + mx) * 0.5 + lead
+	var span := Vector2(mx.x - mn.x, mx.z - mn.z).length()
+	dist_goal = clamp(span * 1.25 + 1.8, 3.2, 14.0)
+	if _track_dir.length() > 0.2:
+		yaw_goal = yaw_of(_track_dir.normalized())
+
 func set_follow(on: bool) -> void:
 	follow = on
 	follow_changed.emit(on)
@@ -590,9 +624,17 @@ func _process(delta: float) -> void:
 	if cam == null:
 		return
 	var k := 1.0 - exp(-5.0 * delta)
+	var kd := k
+	var ky := 1.0 - exp(-3.0 * delta)
+	if follow and not replay.is_empty() and game != null:
+		# slitte in movimento (replay o movimento simultaneo): la telecamera le segue con continuità
+		_track_moving(delta)
+		k = 1.0 - exp(-3.0 * delta)
+		kd = 1.0 - exp(-1.6 * delta)
+		ky = 1.0 - exp(-1.4 * delta)
 	target = target.lerp(target_goal, k)
-	yaw = lerp_angle(yaw, yaw_goal, 1.0 - exp(-3.0 * delta))
-	dist = lerp(dist, dist_goal, k)
+	yaw = lerp_angle(yaw, yaw_goal, ky)
+	dist = lerp(dist, dist_goal, kd)
 	var fwd := Vector3(sin(yaw), 0, -cos(yaw))
 	cam.position = target - fwd * dist * cos(pitch) + Vector3.UP * dist * sin(pitch)
 	cam.look_at(target, Vector3.UP)
