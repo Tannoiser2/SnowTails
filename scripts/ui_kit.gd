@@ -53,22 +53,13 @@ static func setup_fonts() -> void:
 	var d := ThemeDB.fallback_font
 	_add_fallbacks(d)
 
-## Campo di testo su tablet e telefono nel browser: la tastiera virtuale non si apre da sola,
-## quindi al tocco si apre la finestra di inserimento del sistema (con la sua tastiera).
-static func touch_text(le: LineEdit, title: String) -> void:
+## Campo di testo su tablet e telefono nel browser: Safari apre la tastiera solo toccando un
+## vero campo della pagina, quindi sopra il campo del gioco se ne mette uno HTML invisibile.
+## Quello che si scrive lì compare nel campo del gioco; niente finestre in più.
+static func touch_text(le: LineEdit, _title := "") -> void:
 	if not OS.has_feature("web"):
 		return
-	le.focus_entered.connect(func():
-		if not DisplayServer.is_touchscreen_available():
-			return
-		var r = JavaScriptBridge.eval("window.prompt(%s, %s)" % [JSON.stringify(title), JSON.stringify(le.text)], true)
-		if r != null and typeof(r) == TYPE_STRING:
-			var t: String = r
-			if le.max_length > 0:
-				t = t.substr(0, le.max_length)
-			le.text = t
-			le.text_changed.emit(t)
-		le.release_focus())
+	le.add_child(WebTextField.new())
 
 ## Tema di tutto il gioco: font, campi di testo, menu a tendina, barre di scorrimento.
 static func make_theme() -> Theme:

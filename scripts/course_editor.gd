@@ -90,8 +90,16 @@ func _ready() -> void:
 	start_pick.tooltip_text = "Parti da un percorso esistente"
 	UIKit.style_option(start_pick)
 	start_pick.item_selected.connect(_load_from)
-	nr.add_child(start_pick)
 	col.add_child(nr)
+	start_pick.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var sr := HBoxContainer.new()
+	sr.add_theme_constant_override("separation", 6)
+	var sl := UIKit.label("Parti da", 14, UIKit.MUTED)
+	sl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	sl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	sr.add_child(sl)
+	sr.add_child(start_pick)
+	col.add_child(sr)
 	col.add_child(UIKit.heading("Pezzi", 14))
 	var g := GridContainer.new()
 	g.columns = 4
