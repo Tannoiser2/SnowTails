@@ -760,8 +760,8 @@ func _process(delta: float) -> void:
 			if moving:
 				# passo costante: una casella ogni STEP_T secondi (un po' di margine per le diagonali)
 				node.position = node.position.move_toward(goal, delta * max(course.cell_len * S / STEP_T * 1.25, dd * 2.5))
-				var want := -atan2(to_goal.x, -to_goal.z)
-				node.rotation.y = lerp_angle(node.rotation.y, want, 1.0 - exp(-12.0 * delta))
+				# guarda lungo la pista (non verso lo spostamento): di lato scivola, non si gira
+				node.rotation.y = lerp_angle(node.rotation.y, -yaw_of(_heading_of(p.cell)), 1.0 - exp(-8.0 * delta))
 			else:
 				node.rotation.y = lerp_angle(node.rotation.y, -yaw_of(_heading_of(p.cell)), 1.0 - exp(-4.0 * delta))
 			node.run = move_toward(node.run, 1.0 if moving else 0.0, delta * 4.0)

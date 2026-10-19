@@ -1029,7 +1029,7 @@ func start_replay() -> void:
 				var pos: Vector3 = (pts[k - 1] as Vector3).lerp(pts[k], u)
 				var dv: Vector3 = (pts[k] as Vector3) - (pts[k - 1] as Vector3)
 				board.replay[mv["pid"]]["pos"] = pos
-				board.replay[mv["pid"]]["dir"] = Vector2(dv.x, dv.z).normalized()
+				board.replay[mv["pid"]]["dir"] = _facing(int(mv["path"][k - 1]), int(mv["path"][k]), u, dv)
 				board.replay[mv["pid"]]["run"] = 1.0
 		# fine del giro: urti, alberelli travolti, posizioni, ammaccature, distruzioni
 		for mv in moves:
@@ -1272,7 +1272,8 @@ func _drive(items: Array, dur: float, follow: bool) -> void:
 				var a: Vector3 = pts[k]
 				var b: Vector3 = pts[k + 1]
 				var dv := b - a
-				board.replay[p.id] = {"pos": a.lerp(b, u), "dir": Vector2(dv.x, dv.z).normalized(), "run": 1.0 if x < float(kmax) else 0.0}
+				var fd := _facing(int(it["full"][k]), int(it["full"][k + 1]), u, dv)
+				board.replay[p.id] = {"pos": a.lerp(b, u), "dir": fd, "run": 1.0 if x < float(kmax) else 0.0}
 				var reach := int(floor(x + 0.0001))
 				while int(it["last"]) < reach:
 					it["last"] = int(it["last"]) + 1
@@ -1283,6 +1284,19 @@ func _drive(items: Array, dur: float, follow: bool) -> void:
 			_drive_cell(it, follow)
 		board.replay.erase(it["p"].id)
 	board.redraw()
+
+## Dove guarda la slitta mentre va da una casella all'altra: sempre lungo la pista, con appena
+## un accenno verso lo spostamento. Così nelle derive e nelle spinte del vento scivola di lato
+## invece di girarsi di traverso.
+func _facing(from_id: int, to_id: int, u: float, dv: Vector3) -> Vector2:
+	var h: Vector2 = course.heading(from_id).lerp(course.heading(to_id), u)
+	if h.length() < 0.01:
+		h = course.heading(to_id)
+	h = h.normalized()
+	var mv := Vector2(dv.x, dv.z)
+	if mv.length() > 0.0001 and mv.normalized().dot(h) > -0.2:
+		h = (h + mv.normalized() * 0.18).normalized()
+	return h
 
 ## La slitta è arrivata in una casella del percorso: posizione di gioco, alberelli, telecamera.
 func _drive_cell(it: Dictionary, follow: bool) -> void:
