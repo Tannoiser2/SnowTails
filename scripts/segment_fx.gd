@@ -302,6 +302,9 @@ static func _mounds(parent: Node3D, c: Course, pi: int) -> void:
 		var mi := MeshInstance3D.new()
 		mi.mesh = st.commit()
 		mi.material_override = m
+		# il cumulo è costruito già al suo posto: per spazzarlo via lo si schiaccia attorno al centro
+		mi.set_meta("snow_cell", id)
+		mi.set_meta("snow_center", base)
 		parent.add_child(mi)
 
 # ---------- ghiaccio ----------

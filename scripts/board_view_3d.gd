@@ -33,6 +33,8 @@ var _tiles: Node3D
 var _marks: Node3D
 var _saps: Node3D
 var _sap_nodes := {}        # casella -> alberello
+var _snow_nodes := {}       # casella -> cumulo di neve fresca
+var _snow_gone := {}        # cumuli già spazzati in questa animazione (prima che il gioco lo registri)
 var _fx: Node3D
 static var _puff_mat: StandardMaterial3D
 var _teams := {}           # id -> {node: TeamModel, label: Label3D, ring: MeshInstance3D}
@@ -162,6 +164,11 @@ func setup(c: Course, g: SledGame) -> void:
 		sh.cast_shadow = GeometryInstance3D.SHADOW_CASTING_SETTING_OFF
 		_tiles.add_child(sh)
 	SegmentFx.build(_tiles, c)
+	_snow_nodes.clear()
+	_snow_gone.clear()
+	for n in _tiles.find_children("*", "MeshInstance3D", true, false):
+		if n.has_meta("snow_cell"):
+			_snow_nodes[int(n.get_meta("snow_cell"))] = n
 	_tiles.add_child(SegmentFx.terrain(c))
 	_saps = Node3D.new()
 	add_child(_saps)
@@ -378,6 +385,16 @@ func _sapling_model(variant := 0) -> Node3D:
 func redraw() -> void:
 	if course == null or _marks == null:
 		return
+	# cumuli di neve fresca: visibili finché nessuno ci è passato
+	if game:
+		for id in _snow_nodes:
+			var sn: MeshInstance3D = _snow_nodes[id]
+			var alive: bool = game.fresh.has(id) and not _snow_gone.has(id)
+			if sn.has_meta("sweeping"):
+				continue
+			sn.visible = alive
+			if alive:
+				sn.transform = Transform3D.IDENTITY
 	if _saps and game:
 		for ch in _saps.get_children():
 			ch.queue_free()
@@ -565,6 +582,34 @@ func knock_sapling(cell_id: int, dir2: Vector2) -> void:
 	tw.tween_property(n, "scale", Vector3(0.001, 0.001, 0.001), 0.45).set_trans(Tween.TRANS_BACK).set_ease(Tween.EASE_IN)
 	tw.tween_callback(n.queue_free)
 	puff(pos + Vector3(0, 0.08, 0), 0.7)
+
+## Rimette tutti i cumuli secondo lo stato del gioco (inizio del replay).
+func reset_snow() -> void:
+	_snow_gone.clear()
+	redraw()
+
+## La slitta spazza via un cumulo di neve fresca: si appiattisce e si apre a ventaglio,
+## con una nuvola di neve sollevata nel senso di marcia.
+func sweep_snow(cell_id: int, dir2: Vector2) -> void:
+	if not _snow_nodes.has(cell_id):
+		return
+	var n: MeshInstance3D = _snow_nodes[cell_id]
+	if not n.visible:
+		return
+	var c: Vector3 = n.get_meta("snow_center")
+	var d3 := Vector3(dir2.x, 0, dir2.y).normalized()
+	_snow_gone[cell_id] = true
+	n.set_meta("sweeping", true)
+	var tw := create_tween()
+	tw.tween_method(func(k: float):
+		# schiacciato verso il basso, allargato e spinto avanti attorno al centro del cumulo
+		var b := Basis().scaled(Vector3(1.0 + k * 0.5, 1.0 - k * 0.95, 1.0 + k * 0.5))
+		n.transform = Transform3D(b, c - b * c + d3 * k * 0.25), 0.0, 1.0, 0.35).set_ease(Tween.EASE_OUT)
+	tw.tween_callback(func():
+		n.visible = false
+		n.remove_meta("sweeping"))
+	for k in 3:
+		puff(c + d3 * (0.15 + k * 0.18) + Vector3(0, 0.06, 0), 0.7 - k * 0.12)
 
 ## Urto contro il bordo o contro un'altra slitta: nuvola di neve e slitte che sobbalzano.
 func crash_fx(cell_id: int, hit_dir: Vector2, pid: int, other_pid := -1) -> void:

@@ -51,12 +51,19 @@ func _init() -> void:
 	print("vento: spinte = ", outs[0].get("wind", 0), " fine corsia laterale ", c.cells[outs[0]["end"]]["lat"])
 	# baita: ci si ferma sopra con un'ammaccatura → riparata, niente carte
 	var hut: int = c.huts.keys()[0]
-	p.dents = 1
+	p.dents = 3
 	p.hand = [1, 2]
 	var o2 := {"path": [hut], "end": hut, "crash": "", "dents": 0, "corner_dents": 0, "sap": [], "from": hut, "speed": 1}
 	g.after_move(p, o2)
-	tot += 1; if p.dents == 0 and p.hand.size() == 2: ok += 1
-	print("baita: ammaccature ", p.dents, " carte ", p.hand.size())
+	# 3 ammaccature = 6 mezze; metà riparata → 3 mezze: 1 ammaccatura e mezza
+	tot += 1; if p.dents == 1 and p.half and p.hand.size() == 2: ok += 1
+	print("baita: ammaccature ", p.dents, " mezza ", p.half, " carte ", p.hand.size())
+	# neve fresca spazzata: dopo il passaggio la casella costa 1
+	var fc: int = c.grid_cell(5, 1, 0)
+	var had := g.fresh.has(fc)
+	g.after_move(p, {"path": [fc], "end": fc, "crash": "", "dents": 0, "corner_dents": 0, "sap": [], "from": fc, "speed": 1})
+	tot += 1; if had and not g.fresh.has(fc): ok += 1
+	print("neve spazzata: prima ", had, " dopo ", g.fresh.has(fc))
 	# bivio: 4 + 4 caselle lunghe, 6 + 6 normali, niente corsia di mezzo
 	tot += 1; if (c.pieces[4]["cells"] as Array).size() == 20: ok += 1
 	print("bivio: caselle ", (c.pieces[4]["cells"] as Array).size())

@@ -654,7 +654,7 @@ func show_help() -> void:
 
 [b]Fine.[/b] Si corre finché tutte le slitte hanno tagliato il traguardo; chi è arrivato smette di muovere. In classifica conta prima il giro in cui si taglia il traguardo, poi, a parità di giro, chi è andato più lontano oltre la linea.
 
-[b]Segmenti fanmade.[/b] Salita: chi ci passa fa al massimo %d punti di movimento. Discesa: chi parte in discesa va almeno a %d, anche frenando. Neve fresca: ogni casella coi cumuli costa 2 punti. Ghiaccio: chi entra derivando continua a derivare finché è sul ghiaccio, e a fine movimento scivola avanti di una casella. Vento: ogni 2 caselle percorse sulla tessera ti sposta di una corsia nel verso della manica a vento; contro il bordo è un'ammaccatura. Baita: chi si ferma sulla casella accanto alla baita ripara un'ammaccatura, ma non pesca. Bivio: un'isola di abeti divide la pista; da una parte neve fresca, dall'altra alberelli.
+[b]Segmenti fanmade.[/b] Salita: chi ci passa fa al massimo %d punti di movimento. Discesa: chi parte in discesa va almeno a %d, anche frenando. Neve fresca: ogni casella coi cumuli costa 2 punti; la prima slitta che ci passa la spazza via. Ghiaccio: chi entra derivando continua a derivare finché è sul ghiaccio, e a fine movimento scivola avanti di una casella. Vento: ogni 2 caselle percorse sulla tessera ti sposta di una corsia nel verso della manica a vento; contro il bordo è un'ammaccatura. Baita: chi si ferma sulla casella accanto alla baita ripara metà dei danni (arrotondando a suo favore), ma non pesca. Bivio: un'isola di abeti divide la pista; da una parte neve fresca, dall'altra alberelli.
 
 [b]Variante simultanea.[/b] Se nel menu scegli «Simultaneo», a ogni giro tutti programmano la mossa (carte e casella d'arrivo) senza vedere quella degli altri, poi le slitte partono insieme. Partono e arrivano tutte insieme, quindi chi ha più caselle da fare va più veloce. Due slitte non entrano mai nella stessa casella nello stesso momento: se possono, scelgono una rotta equivalente che evita il contatto; se non possono, entra chi va più veloce (a parità, chi era più avanti a inizio giro) e l'altra si ferma prima e prende mezza ammaccatura (due mezze fanno un'ammaccatura). Il bonus di equilibrio si calcola sulle posizioni di inizio giro.
 
@@ -968,6 +968,9 @@ func start_replay() -> void:
 		p.dents = 0
 		p.wrecked = false
 	game.saplings = game.initial_saplings.duplicate()
+	var final_snow: Dictionary = game.fresh.duplicate()
+	game.fresh = game.initial_fresh.duplicate()
+	board.reset_snow()
 	board.set_follow(true)
 	replay_stop = false
 	replay_paused = false
@@ -1032,6 +1035,13 @@ func start_replay() -> void:
 		for mv in moves:
 			_play_fx(mv.get("fx", {}))
 			var pth: Array = mv["path"]
+			for sn in mv.get("snow", []):
+				var ks := pth.find(sn)
+				var dvs := Vector2(0, -1)
+				if ks > 0:
+					dvs = (course.cells[sn]["pos"] - course.cells[pth[ks - 1]]["pos"]).normalized()
+				board.sweep_snow(int(sn), dvs)
+				game.fresh.erase(sn)
 			for sp in mv["sap"]:
 				var k := pth.find(sp)
 				var dv := Vector2(0, -1)
@@ -1057,6 +1067,8 @@ func start_replay() -> void:
 		p.dents = final[p.id]["dents"]
 		p.wrecked = final[p.id]["wrecked"]
 	game.saplings = final_saps
+	game.fresh = final_snow
+	board.reset_snow()
 	board.replay.clear()
 	board.redraw()
 	_show_results()
@@ -1278,6 +1290,8 @@ func _drive_cell(it: Dictionary, follow: bool) -> void:
 	var t: int = it["full"][k]
 	var p = it["p"]
 	p.cell = t
+	if k > 0 and game.fresh.has(t):
+		board.sweep_snow(t, (course.cells[t]["pos"] - course.cells[it["full"][k - 1]]["pos"]).normalized())
 	if (it["sap"] as Array).has(t) and game.saplings.has(t):
 		board.knock_sapling(t, (course.cells[t]["pos"] - course.cells[it["full"][k - 1]]["pos"]).normalized())
 		game.saplings.erase(t)

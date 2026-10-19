@@ -270,8 +270,8 @@ caratteristiche, nell'editor o nella pista casuale:
   è un'ammaccatura.
 - **Ghiaccio**: chi entra derivando continua a derivare; a fine movimento si scivola avanti
   di una casella.
-- **Neve fresca**: le caselle coi cumuli costano 2 punti.
-- **Baita**: chi si ferma sulla casella accanto ripara un'ammaccatura (o una mezza), ma non pesca.
+- **Neve fresca**: le caselle coi cumuli costano 2 punti; la prima slitta che ci passa li spazza via.
+- **Baita**: chi si ferma sulla casella accanto ripara metà dei danni (arrotondando a suo favore), ma non pesca.
 
 Nel file del percorso un pezzo con caratteristiche si scrive così:
 `{"id": "straight_p14a", "mods": {"slope": "up", "wind": "R", "ice": true}}`.
@@ -286,3 +286,10 @@ Editor: tavolozza compatta, anteprima 3D (si ruota e si avvicina come in partita
 delle caratteristiche quando è selezionato un rettilineo. Menu: «Dalla lista» o «Pista
 casuale» con difficoltà, lunghezza e fanmade sì/no.
 Test: `tests/fan_rules.gd`, `tests/gen_fan.gd`, `tests/gen_play_fan.gd`.
+
+### CPU
+La CPU non è addestrata: prova tutte le mosse possibili con le regole vere e dà un
+punteggio. Per le 6 mosse migliori simula anche il turno dopo con le carte che restano
+(così valuta salite, discese, vento e ghiaccio), e guarda il vento e la neve davanti.
+`tests/ai_duel.gd` la fa correre contro la versione precedente: su 150 piste casuali
+fanmade vince 101 gare contro 49; sulle piste normali posizione media 2,31 contro 2,69.

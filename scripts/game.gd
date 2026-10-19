@@ -28,6 +28,7 @@ class Player:
 	var slot := -1
 	var stalls := 0
 	var finish_round := 0      # giro in cui ha tagliato il traguardo (0 = non ancora)
+	var smart := true          # CPU che guarda avanti le caratteristiche fanmade (false = la vecchia, per i confronti)
 
 var course: Course
 var players: Array = []
@@ -42,7 +43,11 @@ var saplings := {}          # alberelli ancora in pista
 var history: Array = []
 var start_record := {}
 var initial_saplings := {}
-var last_fx := {}           # effetti dell'ultima mossa, per il replay
+## Neve fresca ancora intatta: la prima slitta che ci passa la spazza via (come gli alberelli)
+var fresh := {}
+var initial_fresh := {}
+var last_fx := {}
+var last_snow := []         # neve fresca spazzata dall'ultima mossa, per il replay           # effetti dell'ultima mossa, per il replay
 ## Generatore casuale della partita: tutti i mescolamenti passano da qui. Online ogni dispositivo
 ## parte dallo stesso seme, quindi i mazzi restano identici ovunque senza doverli trasmettere.
 var rng := RandomNumberGenerator.new()
@@ -82,6 +87,8 @@ func setup(c: Course, ai_flags: Array, seed_value := 0) -> void:
 	for id in c.saplings:
 		saplings[id] = true
 	initial_saplings = saplings.duplicate()
+	fresh = c.fresh.duplicate()
+	initial_fresh = fresh.duplicate()
 	history = []
 	start_record = {}
 	oi = 0
@@ -292,7 +299,7 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 				r2["hit_cell"] = t
 				res.append(r2)
 				continue
-			var cost := 2 if course.fresh.has(t) else 1
+			var cost := 2 if fresh.has(t) else 1
 			var up2: bool = up or course.slope_of(t) == "up"
 			if cost > steps or (up2 and (total - steps) + cost > UP_MAX):
 				# non ci entra: neve fresca troppo profonda per i punti rimasti, o salita oltre il limite
@@ -555,6 +562,15 @@ func after_move(p: Player, o: Dictionary) -> bool:
 		msgs.append("il vento la sposta di %d corsi%s" % [int(o["wind"]), "a" if int(o["wind"]) == 1 else "e"])
 	if in_crev:
 		msgs.append("si ferma nella spaccatura e non pesca")
+	var swept := []
+	for t in o["path"]:
+		if fresh.has(t):
+			swept.append(t)
+			fresh.erase(t)
+	if swept.size() > 0:
+		msgs.append("spazza via la neve fresca")
+	o["snow"] = swept
+	last_snow = swept.duplicate()
 	var sap: Array = o.get("sap", [])
 	if sap.size() > 0:
 		msgs.append("travolge %s (+%d)" % ["un alberello" if sap.size() == 1 else "%d alberelli" % sap.size(), sap.size()])
@@ -582,15 +598,15 @@ func after_move(p: Player, o: Dictionary) -> bool:
 		log_text += " — " + "; ".join(msgs)
 	if p.wrecked:
 		return false
-	# baita: chi ci si ferma ripara un'ammaccatura, ma non pesca
+	# baita: chi ci si ferma ripara metà dei danni (arrotondando a suo favore), ma non pesca
 	var repaired := false
 	if course.huts.has(int(o["end"])) and String(o["crash"]) == "" and (p.dents > 0 or p.half):
-		if p.half:
-			p.half = false
-		else:
-			p.dents -= 1
+		var units := p.dents * 2 + (1 if p.half else 0)      # in mezze ammaccature
+		var left := units / 2
+		p.dents = left / 2
+		p.half = left % 2 == 1
 		repaired = true
-		log_text += " — si ripara alla baita (−1 ammaccatura, non pesca)"
+		log_text += " — si ripara alla baita (metà dei danni, non pesca)"
 	if o["crash"] != "sled" and not in_crev and not repaired:
 		draw_up(p)
 	if hand_size(p) > 5 and not p.hand.is_empty():
@@ -617,7 +633,8 @@ func record(p: Player, start_cell: int, path: Array, sap: Array) -> void:
 	var full := [start_cell]
 	full.append_array(path)
 	history[round_n - 1].append({"pid": p.id, "path": full, "dents": p.dents, "wrecked": p.wrecked,
-		"end": p.cell, "sap": sap.duplicate(), "fx": last_fx.duplicate()})
+		"end": p.cell, "sap": sap.duplicate(), "snow": last_snow.duplicate(), "fx": last_fx.duplicate()})
+	last_snow = []
 	last_fx = {}
 
 ## Una slitta ancora in corsa: non distrutta e non ancora oltre il traguardo.
@@ -663,11 +680,33 @@ func _game_over() -> void:
 
 # ---------- CPU ----------
 func ai_choose(p: Player) -> Dictionary:
+	var cands := _ai_candidates(p)
+	if cands.is_empty():
+		return {}
+	cands.sort_custom(func(a, b): return a["sc"] > b["sc"])
+	if not p.smart or not ai_parts.get("ply2", true):
+		return cands[0]
+	# sguardo al turno dopo: per le mosse migliori si simula anche la mossa seguente con le
+	# carte che restano in mano. Così salite, discese, vento e ghiaccio si valutano davvero.
+	var best: Dictionary = cands[0]
+	var best_sc := -INF
+	for i in min(AI_TOP, cands.size()):
+		var c: Dictionary = cands[i]
+		var sc: float = c["sc"] + AI_PLY2 * _ai_next_turn(p, c)
+		if sc > best_sc:
+			best_sc = sc
+			best = c
+	return best
+
+const AI_TOP := 6
+const AI_PLY2 := 0.6
+
+func _ai_candidates(p: Player) -> Array:
 	var counts := {}
 	for v in p.hand:
 		counts[v] = counts.get(v, 0) + 1
 	var subs := [["L"], ["R"], ["B"], ["L", "R"], ["L", "B"], ["R", "B"], ["L", "R", "B"]]
-	var best := {}
+	var out := []
 	for v in counts.keys():
 		for sub in subs:
 			if sub.size() > counts[v]:
@@ -677,10 +716,51 @@ func ai_choose(p: Player) -> Dictionary:
 				pend.append({"v": v, "slot": s})
 			var m := mat_after(p, pend)
 			for o in compute_outs(p, m):
-				var sc := ai_score(p, m, o, pend.size())
-				if best.is_empty() or sc > best["sc"]:
-					best = {"sc": sc, "pend": pend, "o": o}
-	return best
+				out.append({"sc": ai_score(p, m, o, pend.size()), "pend": pend, "o": o, "m": m})
+	return out
+
+## Miglior avanzamento del turno dopo, partendo dall'esito c, con le carte rimaste in mano.
+func _ai_next_turn(p: Player, c: Dictionary) -> float:
+	var o: Dictionary = c["o"]
+	if int(cell(o["end"])["piece"]) >= course.finish_piece:
+		return 30.0
+	var save := {"cell": p.cell, "L": p.L, "R": p.R, "B": p.B, "hand": p.hand.duplicate(), "moves": p.moves, "dents": p.dents}
+	p.cell = o["end"]
+	p.L = c["m"]["L"]
+	p.R = c["m"]["R"]
+	p.B = c["m"]["B"]
+	for x in c["pend"]:
+		p.hand.erase(x["v"])
+	p.moves += 1
+	p.dents += int(o["dents"])
+	var best := -60.0
+	var counts := {}
+	for v in p.hand:
+		counts[v] = counts.get(v, 0) + 1
+	var subs := [["L"], ["R"], ["B"], ["L", "R"]]
+	var from_togo := int(cell(p.cell)["togo"])
+	for v in counts.keys():
+		for sub in subs:
+			if sub.size() > counts[v]:
+				continue
+			var pend := []
+			for s2 in sub:
+				pend.append({"v": v, "slot": s2})
+			for o2 in compute_outs(p, mat_after(p, pend)):
+				var sc := float(from_togo - int(cell(o2["end"])["togo"])) * 10.0
+				sc -= float(o2["dents"]) * (22.0 + p.dents * 14.0)
+				if p.dents + int(o2["dents"]) >= 5:
+					sc -= 300.0
+				if sc > best:
+					best = sc
+	p.cell = save["cell"]
+	p.L = save["L"]
+	p.R = save["R"]
+	p.B = save["B"]
+	p.hand = save["hand"]
+	p.moves = save["moves"]
+	p.dents = save["dents"]
+	return best if best > -60.0 else 0.0
 
 func ai_score(p: Player, m: Dictionary, o: Dictionary, n_cards: int) -> float:
 	var st := cell(p.cell)
@@ -700,6 +780,11 @@ func ai_score(p: Player, m: Dictionary, o: Dictionary, n_cards: int) -> float:
 		s -= 14.0
 	var S2: int = m["L"] + m["R"] - m["B"]
 	var d2: int = m["R"] - m["L"]
+	if p.smart and not fin:
+		s += _ai_lookahead(p, o, S2, d2)
+		# dalla discesa si riparte ad almeno 5: lo sa per le curve e i salti che vengono dopo
+		if ai_parts["down"] and course.slope_of(int(o["end"])) == "down":
+			S2 = max(S2, DOWN_MIN)
 	if S2 <= 1:
 		s -= 10.0
 	var nl := course.next_limit(float(en["s"]))
@@ -727,7 +812,9 @@ func ai_score(p: Player, m: Dictionary, o: Dictionary, n_cards: int) -> float:
 			var side: float = clamp(float(en["lat"]) / course.lane_w, -2.5, 2.5)
 			s += side * (1.5 if nc["turn"] == "R" else -1.5)
 	if course.huts.has(int(o["end"])) and (p.dents > 0 or p.half) and String(o["crash"]) == "":
-		s += 8.0 + p.dents * 9.0
+		# la baita ripara metà dei danni: vale di più con tante ammaccature
+		var units := p.dents * 2 + (1 if p.half else 0)
+		s += 6.0 + float(units - units / 2) * 6.0 + (10.0 if p.dents >= 3 else 0.0)
 	if (o["path"] as Array).is_empty():
 		s -= 12.0 + 60.0 * p.stalls
 	if not fin:
@@ -737,6 +824,47 @@ func ai_score(p: Player, m: Dictionary, o: Dictionary, n_cards: int) -> float:
 			s -= 6.0 * (max(S2, 1) - run)
 	s -= abs(d2) * 1.5 + n_cards * 0.5
 	return s + randf() * 3.0
+
+## Uno sguardo al turno dopo, sulle caratteristiche fanmade: velocità sprecata in salita,
+## vento che spingerà contro il bordo, neve fresca già spazzata da seguire.
+static var ai_parts := {"up": false, "wind": true, "fresh": true, "down": true, "ply2": true}
+func _ai_lookahead(p: Player, o: Dictionary, S2: int, d2: int) -> float:
+	var s := 0.0
+	var end: int = o["end"]
+	var reach: int = max(S2, 1) + 1
+	# salita davanti: con la plancia veloce si sprecheranno punti (e in salita si arriva lenti)
+	var id := end
+	for k in (reach + 1 if ai_parts["up"] else 0):
+		if course.slope_of(id) == "up":
+			if S2 > UP_MAX:
+				s -= float(S2 - UP_MAX) * 3.5
+			break
+		var fw: Array = cell(id)["fwd"]
+		if fw.is_empty():
+			break
+		id = fw[0]
+	# vento: al prossimo turno sposterà di S2/2 corsie; conviene avere spazio da quel lato
+	var w := course.wind_of(end)
+	if w != 0 and S2 > 1 and ai_parts["wind"]:
+		var pushes: int = S2 / 2
+		var room := 0
+		var cc := end
+		for i in pushes:
+			var t: int = cell(cc).get("side_r" if w > 0 else "side_l", -1)
+			if t < 0:
+				break
+			room += 1
+			cc = t
+		if room < pushes:
+			s -= float(pushes - room) * 9.0
+		# derivare contro vento lo compensa
+		if d2 != 0 and signi(d2) == -w:
+			s += 3.0
+	# neve fresca intatta proprio davanti: meglio una corsia già spazzata
+	var fw2: Array = cell(end)["fwd"]
+	if ai_parts["fresh"] and not fw2.is_empty() and fresh.has(fw2[0]):
+		s -= 3.0
+	return s
 
 func ai_discard(p: Player) -> void:
 	for v in ai_discard_values(p):
