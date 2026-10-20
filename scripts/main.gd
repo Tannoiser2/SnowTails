@@ -855,11 +855,9 @@ func _menu_rebuild_players() -> void:
 			_menu_thumbs[i] = SledThumb.new(SledGame.COLORS[i])
 		var th: SledThumb = _menu_thumbs[i]
 		th.set_active(on)
+		th.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		th.tooltip_text = SledGame.NAMES[i]
 		r.add_child(th)
-		var nm := UIKit.label("  " + SledGame.NAMES[i], 24, UIKit.INK if on else UIKit.MUTED)
-		nm.autowrap_mode = TextServer.AUTOWRAP_OFF
-		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		r.add_child(nm)
 		for opt in [["no", "No", not on, 80], ["human", "Persona", on and not setup_ai[i], 130], ["cpu", "CPU", on and setup_ai[i], 100]]:
 			var b := UIKit.button(opt[1], opt[2])
 			b.custom_minimum_size = Vector2(opt[3], 52)

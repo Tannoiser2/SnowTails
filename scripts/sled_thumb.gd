@@ -6,7 +6,7 @@ var model: TeamModel
 var _vp: SubViewport
 var _cam: Camera3D
 
-func _init(team: Color, w := 120, h := 52) -> void:
+func _init(team: Color, w := 220, h := 62) -> void:
 	stretch = true
 	custom_minimum_size = Vector2(w, h)
 	size_flags_vertical = Control.SIZE_SHRINK_CENTER
@@ -35,10 +35,11 @@ func _init(team: Color, w := 120, h := 52) -> void:
 	model.run = 1.0
 	model.rotation.y = deg_to_rad(-90)   # di profilo, verso destra
 	_cam = Camera3D.new()
-	_cam.fov = 21
-	_cam.position = Vector3(0.1, 0.36, 1.45)
+	_cam.fov = 13
+	var at := Vector3(0.1, 0.08, 0.0)
+	var from := Vector3(0.1, 0.42, 1.45)
+	_cam.transform = Transform3D(Basis.looking_at(at - from), from)   # fuori dall'albero: niente look_at
 	_vp.add_child(_cam)
-	_cam.look_at(Vector3(0.1, 0.1, 0.0))
 
 ## Fuori gara: ferma e sbiadita.
 func set_active(on: bool) -> void:
