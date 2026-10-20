@@ -373,51 +373,38 @@ var _menu_rows: VBoxContainer
 var _menu_info: Label
 var _menu_start: Button
 
+var menu_tab := ""             # "list", "editor" o "random"
+var _menu_tab_box: VBoxContainer
+var _del_armed := ""
+
 func show_menu() -> void:
 	var land := _is_landscape()
+	if menu_tab == "":
+		menu_tab = "random" if _is_random() else "list"
+	_del_armed = ""
 	var left := VBoxContainer.new()
-	left.add_theme_constant_override("separation", 14)
+	left.add_theme_constant_override("separation", 12)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	left.add_child(UIKit.title("Snow Tails", 58))
 	left.add_child(UIKit.label("Corsa di slitte con le tessere della tua copia. Uso personale.", 20, UIKit.MUTED))
 	left.add_child(UIKit.heading("Percorso"))
-	# scelta ben visibile: un percorso della lista o una pista casuale
-	var mode_row := HBoxContainer.new()
-	mode_row.add_theme_constant_override("separation", 8)
-	for opt in [[false, "Dalla lista"], [true, "Pista casuale"]]:
-		var mb := UIKit.button(opt[1], _is_random() == opt[0])
-		mb.custom_minimum_size = Vector2(0, 48)
-		mb.pressed.connect(func():
-			if opt[0] and not _is_random():
-				_last_listed = course_idx
-				_menu_pick_course(course_files.size())
-			elif not opt[0] and _is_random():
-				_menu_pick_course(clamp(_last_listed, 0, max(course_files.size() - 1, 0)))
-			show_menu())
-		mode_row.add_child(mb)
-	left.add_child(mode_row)
-	var ob := OptionButton.new()
-	ob.custom_minimum_size = Vector2(0, 60)
-	ob.add_theme_font_size_override("font_size", 22)
-	UIKit.style_option(ob)
-	for i in course_files.size():
-		var c := Course.new()
-		var ok := c.load_file(course_files[i])
-		var nm := c.title if c.title != "" else String(course_files[i]).get_file()
-		var tag := "  ✎" if String(course_files[i]).begins_with("user://") else ""
-		ob.add_item(nm + tag + ("" if ok else "  (da completare)"), i)
-	ob.selected = min(course_idx, course_files.size() - 1)
-	ob.item_selected.connect(_menu_pick_course)
-	ob.visible = not _is_random()
-	left.add_child(ob)
+	# tre schede: percorsi della lista, editor, pista casuale
+	var tabs := HBoxContainer.new()
+	tabs.add_theme_constant_override("separation", 8)
+	for opt in [["list", "Dalla lista"], ["editor", "Editor"], ["random", "Pista casuale"]]:
+		var mb := UIKit.button(opt[1], menu_tab == opt[0])
+		mb.custom_minimum_size = Vector2(0, 50)
+		mb.pressed.connect(_menu_set_tab.bind(opt[0]))
+		tabs.add_child(mb)
+	left.add_child(tabs)
+	_menu_tab_box = VBoxContainer.new()
+	_menu_tab_box.add_theme_constant_override("separation", 8)
+	left.add_child(_menu_tab_box)
 	_menu_random_box = VBoxContainer.new()
 	_menu_random_box.add_theme_constant_override("separation", 8)
-	left.add_child(_menu_random_box)
-	_menu_build_random()
 	_menu_info = UIKit.label("", 19, UIKit.MUTED)
-	left.add_child(_menu_info)
 	_menu_preview = CoursePreview.new()
-	_menu_preview.custom_minimum_size = Vector2(0, 290 if land else 260)
+	_menu_preview.custom_minimum_size = Vector2(0, 230 if land else 250)
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 10)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -447,60 +434,187 @@ func show_menu() -> void:
 	right.add_child(vrow)
 	if sim_variant:
 		right.add_child(UIKit.label("Variante: tutti programmano la mossa, poi le slitte partono insieme. Se due slitte non possono evitarsi, passa la più veloce e l'altra si ferma con mezza ammaccatura. Solo per le partite su questo dispositivo.", 16, UIKit.MUTED))
+	right.add_child(_online_box())
+	# in fondo: schermo intero e partenza
 	var acts := HBoxContainer.new()
 	acts.add_theme_constant_override("separation", 10)
-	var bmap := UIKit.button("Mappa le tessere")
-	bmap.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/mapper.tscn"))
-	acts.add_child(bmap)
-	var bed := UIKit.button("Crea percorso")
-	bed.pressed.connect(func():
-		CourseEditor.start_from = course_files[course_idx] if course_idx < course_files.size() else ""
-		get_tree().change_scene_to_file("res://scenes/course_editor.tscn"))
-	acts.add_child(bed)
-	_menu_start = UIKit.cta("Inizia la gara")
-	_menu_start.pressed.connect(_menu_start_pressed)
-	acts.add_child(_menu_start)
-	var online_box := _online_box()
-	var root_box: BoxContainer
-	if land:
-		# in orizzontale l'online va a sinistra, sotto i pulsanti: le due colonne restano equilibrate
-		_menu_preview.custom_minimum_size = Vector2(0, 230)
-		root_box = HBoxContainer.new()
-		root_box.add_theme_constant_override("separation", 36)
-		root_box.add_child(left)
-		root_box.add_child(right)
-		right.add_child(_menu_preview)
-		right.move_child(_menu_preview, 0)
-		left.add_child(acts)
-		left.add_child(online_box)
-	else:
-		right.add_child(online_box)
-		root_box = VBoxContainer.new()
-		root_box.add_theme_constant_override("separation", 14)
-		left.add_child(_menu_preview)
-		root_box.add_child(left)
-		root_box.add_child(right)
-		root_box.add_child(acts)
 	if game != null and not game.over and phase != "menu":
 		var back := UIKit.button("Torna alla gara")
 		back.pressed.connect(_close_modal)
-		(left if land else root_box).add_child(back)
+		acts.add_child(back)
 	if not OS.has_feature("mobile"):
 		var fs := UIKit.button("Finestra" if get_window().mode in [Window.MODE_FULLSCREEN, Window.MODE_EXCLUSIVE_FULLSCREEN] else "Schermo intero")
 		fs.pressed.connect(_toggle_fullscreen)
-		(left if land else root_box).add_child(fs)
+		acts.add_child(fs)
+	_menu_start = UIKit.cta("Inizia la gara")
+	_menu_start.pressed.connect(_menu_start_pressed)
+	acts.add_child(_menu_start)
+	var cols: BoxContainer
+	if land:
+		cols = HBoxContainer.new()
+		cols.add_theme_constant_override("separation", 36)
+	else:
+		cols = VBoxContainer.new()
+		cols.add_theme_constant_override("separation", 14)
+	cols.add_child(left)
+	cols.add_child(right)
+	var root_box := VBoxContainer.new()
+	root_box.add_theme_constant_override("separation", 16)
+	root_box.add_child(cols)
+	root_box.add_child(acts)
+	_menu_build_tab()
 	_menu_rebuild_players()
 	_menu_refresh_info()
-	_modal(root_box, 1040 if land else 700, true)
+	_modal(root_box, 1080 if land else 700, true)
 
 func _is_random() -> bool:
 	return course_idx >= course_files.size()
 
+func _menu_set_tab(t: String) -> void:
+	if t == "random" and not _is_random():
+		_last_listed = course_idx
+		course_idx = course_files.size()
+	elif t != "random" and _is_random():
+		course_idx = clamp(_last_listed, 0, max(course_files.size() - 1, 0))
+	menu_tab = t
+	show_menu()
+
 func _menu_pick_course(i: int) -> void:
 	course_idx = i
-	_menu_build_random()
+	_menu_build_tab()
 	_menu_refresh_info()
 	_menu_refit()
+
+func _course_name(path: String) -> String:
+	var c := Course.new()
+	var ok := c.load_file(path)
+	var nm := c.title if c.title != "" else path.get_file().get_basename()
+	return nm + ("" if ok else "  (da completare)")
+
+## Contenuto della scheda scelta, con anteprima e nota del percorso sotto.
+func _menu_build_tab() -> void:
+	if _menu_tab_box == null:
+		return
+	for ch in _menu_tab_box.get_children():
+		_menu_tab_box.remove_child(ch)
+		if ch != _menu_random_box and ch != _menu_info and ch != _menu_preview:
+			ch.queue_free()
+	if menu_tab == "random":
+		_menu_tab_box.add_child(_menu_random_box)
+		_menu_build_random()
+	elif menu_tab == "list":
+		var sc := ScrollContainer.new()
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		sc.custom_minimum_size = Vector2(0, 230)
+		var vb := VBoxContainer.new()
+		vb.add_theme_constant_override("separation", 6)
+		vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sc.add_child(vb)
+		var mine := false
+		var any_mine := false
+		vb.add_child(UIKit.label("Ufficiali", 18, UIKit.MUTED))
+		for i in course_files.size():
+			var user := String(course_files[i]).begins_with("user://")
+			if user and not mine:
+				mine = true
+				any_mine = true
+				vb.add_child(UIKit.label("Create da te", 18, UIKit.MUTED))
+			var b := UIKit.button(_course_name(course_files[i]), i == course_idx)
+			b.custom_minimum_size = Vector2(0, 46)
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.pressed.connect(_menu_pick_course.bind(i))
+			vb.add_child(b)
+			if i == course_idx:
+				_scroll_to(sc, b)
+		if not any_mine:
+			vb.add_child(UIKit.label("Create da te", 18, UIKit.MUTED))
+			vb.add_child(UIKit.label("Nessuna: creane una nella scheda Editor.", 17, UIKit.MUTED))
+		_menu_tab_box.add_child(sc)
+	else:
+		var row := HBoxContainer.new()
+		row.add_theme_constant_override("separation", 8)
+		var bed := UIKit.button("Crea percorso")
+		bed.custom_minimum_size = Vector2(0, 50)
+		bed.pressed.connect(func():
+			CourseEditor.start_from = course_files[course_idx] if course_idx < course_files.size() else ""
+			get_tree().change_scene_to_file("res://scenes/course_editor.tscn"))
+		row.add_child(bed)
+		var bmap := UIKit.button("Mappa le tessere")
+		bmap.custom_minimum_size = Vector2(0, 50)
+		bmap.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/mapper.tscn"))
+		row.add_child(bmap)
+		_menu_tab_box.add_child(row)
+		_menu_tab_box.add_child(UIKit.label("Le tue piste", 18, UIKit.MUTED))
+		var sc := ScrollContainer.new()
+		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+		sc.custom_minimum_size = Vector2(0, 170)
+		var vb := VBoxContainer.new()
+		vb.add_theme_constant_override("separation", 6)
+		vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+		sc.add_child(vb)
+		var n := 0
+		for i in course_files.size():
+			var path := String(course_files[i])
+			if not path.begins_with("user://"):
+				continue
+			n += 1
+			var r := HBoxContainer.new()
+			r.add_theme_constant_override("separation", 6)
+			var b := UIKit.button(_course_name(path), i == course_idx)
+			b.custom_minimum_size = Vector2(0, 46)
+			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+			b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+			b.clip_text = true
+			b.pressed.connect(_menu_pick_course.bind(i))
+			r.add_child(b)
+			var be := UIKit.button("Modifica")
+			be.custom_minimum_size = Vector2(110, 46)
+			be.size_flags_horizontal = 0
+			be.pressed.connect(func():
+				CourseEditor.start_from = path
+				get_tree().change_scene_to_file("res://scenes/course_editor.tscn"))
+			r.add_child(be)
+			var bd := UIKit.button("Sicuro?" if _del_armed == path else "Elimina")
+			bd.custom_minimum_size = Vector2(110, 46)
+			bd.size_flags_horizontal = 0
+			if _del_armed == path:
+				bd.add_theme_color_override("font_color", Color(0.75, 0.12, 0.1))
+			bd.pressed.connect(_menu_delete.bind(path))
+			r.add_child(bd)
+			vb.add_child(r)
+		if n == 0:
+			vb.add_child(UIKit.label("Non hai ancora creato piste. Premi «Crea percorso».", 17, UIKit.MUTED))
+		_menu_tab_box.add_child(sc)
+	if menu_tab != "random":
+		_menu_tab_box.add_child(_menu_info)
+	_menu_tab_box.add_child(_menu_preview)
+	if menu_tab == "random":
+		_menu_tab_box.add_child(_menu_info)
+
+## Porta in vista la pista scelta quando la lista è già impaginata.
+func _scroll_to(sc: ScrollContainer, c: Control) -> void:
+	for _i in 3:
+		await get_tree().process_frame
+	if is_instance_valid(sc) and is_instance_valid(c):
+		# coordinate locali: la finestra può essere rimpicciolita per stare nello schermo
+		var y := c.position.y + c.size.y * 0.5 - sc.size.y * 0.5
+		sc.scroll_vertical = int(max(0.0, y))
+
+## Elimina una pista creata dal giocatore (secondo tocco per confermare).
+func _menu_delete(path: String) -> void:
+	if _del_armed != path:
+		_del_armed = path
+		_menu_build_tab()
+		_menu_refresh_info()
+		return
+	_del_armed = ""
+	var cur_path := String(course_files[course_idx]) if course_idx < course_files.size() else ""
+	DirAccess.remove_absolute(path)
+	_scan_courses()
+	var k := course_files.find(cur_path)
+	if k >= 0:
+		course_idx = k
+	show_menu()
 
 func _menu_build_random() -> void:
 	UIKit.clear(_menu_random_box)
