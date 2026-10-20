@@ -784,9 +784,21 @@ func _screen_to_world(pos: Vector2) -> Vector2:
 	var dir := cam.project_ray_normal(pos)
 	if abs(dir.y) < 0.0001:
 		return Vector2(INF, INF)
-	var t := -from.y / dir.y
-	var hit := from + dir * t
-	return Vector2(hit.x / S, hit.z / S)
+	# La pista non è a quota zero (rilevato, salite, discese): si interseca il raggio
+	# con il piano alla quota del terreno sotto il punto, raffinando qualche volta.
+	var h := 0.0
+	var p := Vector2.ZERO
+	for _i in 4:
+		var t := (h - from.y) / dir.y
+		var hit := from + dir * t
+		p = Vector2(hit.x / S, hit.z / S)
+		if hcourse == null:
+			break
+		var nh := hcourse.height_at(p)
+		if abs(nh - h) < 0.002:
+			break
+		h = nh
+	return p
 
 func _pan(rel: Vector2) -> void:
 	var vh := get_viewport().get_visible_rect().size.y
