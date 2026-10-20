@@ -17,7 +17,8 @@ func wait(t: float) -> void:
 func _run() -> void:
 	await wait(0.5)
 	await shot("01_menu")
-	main.course_idx = main.course_files.find("res://data/courses/prova.json")
+	main.course_files.append("res://data/courses/prova.json")
+	main.course_idx = main.course_files.size() - 1
 	main.setup_n = 5
 	main.start_game()
 	await wait(0.3)

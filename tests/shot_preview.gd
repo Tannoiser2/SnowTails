@@ -3,7 +3,8 @@ func _init() -> void:
 	var main = load("res://scenes/main.tscn").instantiate()
 	root.add_child(main)
 	await create_timer(0.5).timeout
-	main.course_idx = main.course_files.find("res://data/courses/prova.json")
+	main.course_files.append("res://data/courses/prova.json")
+	main.course_idx = main.course_files.size() - 1
 	main.setup_n = 3
 	main.start_game()
 	for i in 80:

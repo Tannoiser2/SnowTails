@@ -8,6 +8,7 @@ const SLOTN := {"L": "cane sx", "R": "cane dx", "B": "freno"}
 
 class Player:
 	var id := 0
+	var seat := 0          # colore/posto scelto nel menu (indice in NAMES e COLORS)
 	var name := ""
 	var color := Color.WHITE
 	var ai := false
@@ -71,12 +72,17 @@ func setup(c: Course, ai_flags: Array, seed_value := 0) -> void:
 		rng.randomize()
 	course = c
 	players.clear()
+	# ai_flags: un valore per colore; -1 (o null) = colore non in gara
 	for i in ai_flags.size():
+		var f = ai_flags[i]
+		if f == null or (typeof(f) != TYPE_BOOL and int(f) < 0):
+			continue
 		var p := Player.new()
-		p.id = i
+		p.id = players.size()
+		p.seat = i
 		p.name = NAMES[i]
 		p.color = COLORS[i]
-		p.ai = bool(ai_flags[i])
+		p.ai = bool(f)
 		p.deck = make_deck()
 		players.append(p)
 	round_n = 1

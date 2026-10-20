@@ -34,7 +34,7 @@ var slot_order: Array = []
 var si := 0
 var busy := false
 
-var setup_n := 4
+var setup_on := [true, true, true, true, false]   # colori in gara (il "no" del menu)
 var _preview_sig := ""
 var show_paths := false        # anteprima dei percorsi mentre si scelgono le carte
 var setup_ai := [false, true, true, true, true]
@@ -339,12 +339,15 @@ func _close_modal() -> void:
 		modal_root = null
 
 # ======================= MENU =======================
+## Piste di prova: restano nei file (per i test) ma non nella lista del menu.
+const HIDDEN_COURSES := ["salto.json", "prova.json", "fanmade.json"]
+
 func _scan_courses() -> void:
 	course_files.clear()
 	var da := DirAccess.open(COURSE_DIR)
 	if da:
 		for f in da.get_files():
-			if f.ends_with(".json"):
+			if f.ends_with(".json") and not f in HIDDEN_COURSES:
 				course_files.append(COURSE_DIR + f)
 	course_files.sort()
 	var ud := DirAccess.open(CourseEditor.USER_DIR)
@@ -356,7 +359,7 @@ func _scan_courses() -> void:
 		mine.sort()
 		course_files.append_array(mine)
 	var nut := course_files.find(COURSE_DIR + "nutcracker.json")
-	course_idx = max(0, course_files.find(COURSE_DIR + "prova.json"))
+	course_idx = 0
 	var c := Course.new()
 	if nut >= 0 and c.load_file(course_files[nut]):
 		course_idx = nut
@@ -375,7 +378,26 @@ var _menu_start: Button
 
 var menu_tab := ""             # "list", "editor" o "random"
 var _menu_tab_box: VBoxContainer
+var _menu_tabs: HBoxContainer
+var _menu_sim_row: HBoxContainer
+var _menu_sim_lbl: Label
 var _del_armed := ""
+const MENU_TAB_H := 270.0      # altezza fissa delle schede: la finestra non cambia misura
+
+## Numero di slitte in gara (i colori non su «no»).
+var setup_n: int:
+	get:
+		return setup_on.count(true)
+	set(v):
+		for i in setup_on.size():
+			setup_on[i] = i < v
+
+## Un valore per colore: -1 non in gara, 0 persona, 1 CPU.
+func _seat_flags() -> Array:
+	var out := []
+	for i in setup_on.size():
+		out.append(-1 if not setup_on[i] else (1 if setup_ai[i] else 0))
+	return out
 
 func show_menu() -> void:
 	var land := _is_landscape()
@@ -385,30 +407,35 @@ func show_menu() -> void:
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 12)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	left.add_child(UIKit.title("Snow Tails", 58))
-	left.add_child(UIKit.label("Corsa di slitte con le tessere della tua copia. Uso personale.", 20, UIKit.MUTED))
+	# titolo in un riquadro basso: la riga del carattere è molto alta e sprecherebbe spazio
+	var th := Control.new()
+	th.custom_minimum_size = Vector2(0, 62)
+	var tl := UIKit.title("Snow Tails", 58)
+	tl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	tl.position = Vector2(0, -12)
+	th.add_child(tl)
+	left.add_child(th)
 	left.add_child(UIKit.heading("Percorso"))
 	# tre schede: percorsi della lista, editor, pista casuale
-	var tabs := HBoxContainer.new()
-	tabs.add_theme_constant_override("separation", 8)
-	for opt in [["list", "Dalla lista"], ["editor", "Editor"], ["random", "Pista casuale"]]:
-		var mb := UIKit.button(opt[1], menu_tab == opt[0])
-		mb.custom_minimum_size = Vector2(0, 50)
-		mb.pressed.connect(_menu_set_tab.bind(opt[0]))
-		tabs.add_child(mb)
-	left.add_child(tabs)
+	_menu_tabs = HBoxContainer.new()
+	_menu_tabs.add_theme_constant_override("separation", 8)
+	left.add_child(_menu_tabs)
 	_menu_tab_box = VBoxContainer.new()
 	_menu_tab_box.add_theme_constant_override("separation", 8)
+	_menu_tab_box.custom_minimum_size = Vector2(0, MENU_TAB_H)
 	left.add_child(_menu_tab_box)
 	_menu_random_box = VBoxContainer.new()
 	_menu_random_box.add_theme_constant_override("separation", 8)
-	_menu_info = UIKit.label("", 19, UIKit.MUTED)
+	_menu_info = UIKit.label("", 18, UIKit.MUTED)
+	_menu_info.custom_minimum_size = Vector2(0, 52)
+	_menu_info.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	left.add_child(_menu_info)
 	_menu_preview = CoursePreview.new()
 	_menu_preview.custom_minimum_size = Vector2(0, 230 if land else 250)
+	left.add_child(_menu_preview)
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 10)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	right.add_child(UIKit.heading("Slitte"))
 	_menu_count = HBoxContainer.new()
 	_menu_count.add_theme_constant_override("separation", 8)
 	right.add_child(_menu_count)
@@ -416,24 +443,13 @@ func show_menu() -> void:
 	_menu_rows.add_theme_constant_override("separation", 6)
 	right.add_child(_menu_rows)
 	# variante personale: programmazione e movimento simultanei
-	var vrow := HBoxContainer.new()
-	vrow.add_theme_constant_override("separation", 8)
-	var vl := UIKit.heading("Movimento")
-	vl.autowrap_mode = TextServer.AUTOWRAP_OFF
-	vl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-	vl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-	vrow.add_child(vl)
-	for opt in [[false, "A turni"], [true, "Simultaneo"]]:
-		var vb2 := UIKit.button(opt[1], sim_variant == opt[0])
-		vb2.custom_minimum_size = Vector2(130, 48)
-		vb2.size_flags_horizontal = 0
-		vb2.pressed.connect(func():
-			sim_variant = opt[0]
-			show_menu())
-		vrow.add_child(vb2)
-	right.add_child(vrow)
-	if sim_variant:
-		right.add_child(UIKit.label("Variante: tutti programmano la mossa, poi le slitte partono insieme. Se due slitte non possono evitarsi, passa la più veloce e l'altra si ferma con mezza ammaccatura. Solo per le partite su questo dispositivo.", 16, UIKit.MUTED))
+	_menu_sim_row = HBoxContainer.new()
+	_menu_sim_row.add_theme_constant_override("separation", 8)
+	right.add_child(_menu_sim_row)
+	_menu_sim_lbl = UIKit.label("", 16, UIKit.MUTED)
+	_menu_sim_lbl.custom_minimum_size = Vector2(0, 96)
+	_menu_sim_lbl.vertical_alignment = VERTICAL_ALIGNMENT_TOP
+	right.add_child(_menu_sim_lbl)
 	right.add_child(_online_box())
 	# in fondo: schermo intero e partenza
 	var acts := HBoxContainer.new()
@@ -462,7 +478,9 @@ func show_menu() -> void:
 	root_box.add_theme_constant_override("separation", 16)
 	root_box.add_child(cols)
 	root_box.add_child(acts)
+	_menu_build_tabs()
 	_menu_build_tab()
+	_menu_build_sim()
 	_menu_rebuild_players()
 	_menu_refresh_info()
 	_modal(root_box, 1080 if land else 700, true)
@@ -470,6 +488,15 @@ func show_menu() -> void:
 func _is_random() -> bool:
 	return course_idx >= course_files.size()
 
+func _menu_build_tabs() -> void:
+	UIKit.clear(_menu_tabs)
+	for opt in [["list", "Dalla lista"], ["editor", "Editor"], ["random", "Pista casuale"]]:
+		var mb := UIKit.button(opt[1], menu_tab == opt[0])
+		mb.custom_minimum_size = Vector2(0, 50)
+		mb.pressed.connect(_menu_set_tab.bind(opt[0]))
+		_menu_tabs.add_child(mb)
+
+## Cambio scheda: si rifà solo il contenuto, la finestra resta ferma.
 func _menu_set_tab(t: String) -> void:
 	if t == "random" and not _is_random():
 		_last_listed = course_idx
@@ -477,13 +504,33 @@ func _menu_set_tab(t: String) -> void:
 	elif t != "random" and _is_random():
 		course_idx = clamp(_last_listed, 0, max(course_files.size() - 1, 0))
 	menu_tab = t
-	show_menu()
+	_del_armed = ""
+	_menu_build_tabs()
+	_menu_build_tab()
+	_menu_refresh_info()
+
+func _menu_build_sim() -> void:
+	UIKit.clear(_menu_sim_row)
+	var vl := UIKit.heading("Movimento")
+	vl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	vl.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	vl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_menu_sim_row.add_child(vl)
+	for opt in [[false, "A turni"], [true, "Simultaneo"]]:
+		var vb2 := UIKit.button(opt[1], sim_variant == opt[0])
+		vb2.custom_minimum_size = Vector2(130, 48)
+		vb2.size_flags_horizontal = 0
+		vb2.pressed.connect(func():
+			sim_variant = opt[0]
+			_menu_build_sim())
+		_menu_sim_row.add_child(vb2)
+	_menu_sim_lbl.text = ("Variante: tutti programmano la mossa, poi le slitte partono insieme. Se due slitte non possono evitarsi, passa la più veloce e l'altra si ferma con mezza ammaccatura. Solo per le partite su questo dispositivo."
+		if sim_variant else "Regolamento: le slitte muovono una alla volta, dalla prima all'ultima in classifica.")
 
 func _menu_pick_course(i: int) -> void:
 	course_idx = i
 	_menu_build_tab()
 	_menu_refresh_info()
-	_menu_refit()
 
 func _course_name(path: String) -> String:
 	var c := Course.new()
@@ -491,33 +538,36 @@ func _course_name(path: String) -> String:
 	var nm := c.title if c.title != "" else path.get_file().get_basename()
 	return nm + ("" if ok else "  (da completare)")
 
-## Contenuto della scheda scelta, con anteprima e nota del percorso sotto.
+func _list_scroll(h: float) -> Array:
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	sc.custom_minimum_size = Vector2(0, h)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 6)
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(vb)
+	return [sc, vb]
+
+## Contenuto della scheda scelta (altezza fissa).
 func _menu_build_tab() -> void:
 	if _menu_tab_box == null:
 		return
 	for ch in _menu_tab_box.get_children():
 		_menu_tab_box.remove_child(ch)
-		if ch != _menu_random_box and ch != _menu_info and ch != _menu_preview:
+		if ch != _menu_random_box:
 			ch.queue_free()
 	if menu_tab == "random":
 		_menu_tab_box.add_child(_menu_random_box)
 		_menu_build_random()
 	elif menu_tab == "list":
-		var sc := ScrollContainer.new()
-		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		sc.custom_minimum_size = Vector2(0, 230)
-		var vb := VBoxContainer.new()
-		vb.add_theme_constant_override("separation", 6)
-		vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		sc.add_child(vb)
+		var l := _list_scroll(MENU_TAB_H)
+		var sc: ScrollContainer = l[0]
+		var vb: VBoxContainer = l[1]
 		var mine := false
-		var any_mine := false
 		vb.add_child(UIKit.label("Ufficiali", 18, UIKit.MUTED))
 		for i in course_files.size():
-			var user := String(course_files[i]).begins_with("user://")
-			if user and not mine:
+			if String(course_files[i]).begins_with("user://") and not mine:
 				mine = true
-				any_mine = true
 				vb.add_child(UIKit.label("Create da te", 18, UIKit.MUTED))
 			var b := UIKit.button(_course_name(course_files[i]), i == course_idx)
 			b.custom_minimum_size = Vector2(0, 46)
@@ -526,7 +576,7 @@ func _menu_build_tab() -> void:
 			vb.add_child(b)
 			if i == course_idx:
 				_scroll_to(sc, b)
-		if not any_mine:
+		if not mine:
 			vb.add_child(UIKit.label("Create da te", 18, UIKit.MUTED))
 			vb.add_child(UIKit.label("Nessuna: creane una nella scheda Editor.", 17, UIKit.MUTED))
 		_menu_tab_box.add_child(sc)
@@ -544,14 +594,11 @@ func _menu_build_tab() -> void:
 		bmap.pressed.connect(func(): get_tree().change_scene_to_file("res://scenes/mapper.tscn"))
 		row.add_child(bmap)
 		_menu_tab_box.add_child(row)
-		_menu_tab_box.add_child(UIKit.label("Le tue piste", 18, UIKit.MUTED))
-		var sc := ScrollContainer.new()
-		sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
-		sc.custom_minimum_size = Vector2(0, 170)
-		var vb := VBoxContainer.new()
-		vb.add_theme_constant_override("separation", 6)
-		vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		sc.add_child(vb)
+		var lt := UIKit.label("Le tue piste", 18, UIKit.MUTED)
+		lt.custom_minimum_size = Vector2(0, 22)
+		_menu_tab_box.add_child(lt)
+		var l := _list_scroll(MENU_TAB_H - 50 - 22 - 16 - 12)
+		var vb: VBoxContainer = l[1]
 		var n := 0
 		for i in course_files.size():
 			var path := String(course_files[i])
@@ -584,12 +631,7 @@ func _menu_build_tab() -> void:
 			vb.add_child(r)
 		if n == 0:
 			vb.add_child(UIKit.label("Non hai ancora creato piste. Premi «Crea percorso».", 17, UIKit.MUTED))
-		_menu_tab_box.add_child(sc)
-	if menu_tab != "random":
-		_menu_tab_box.add_child(_menu_info)
-	_menu_tab_box.add_child(_menu_preview)
-	if menu_tab == "random":
-		_menu_tab_box.add_child(_menu_info)
+		_menu_tab_box.add_child(l[0])
 
 ## Porta in vista la pista scelta quando la lista è già impaginata.
 func _scroll_to(sc: ScrollContainer, c: Control) -> void:
@@ -605,7 +647,6 @@ func _menu_delete(path: String) -> void:
 	if _del_armed != path:
 		_del_armed = path
 		_menu_build_tab()
-		_menu_refresh_info()
 		return
 	_del_armed = ""
 	var cur_path := String(course_files[course_idx]) if course_idx < course_files.size() else ""
@@ -614,7 +655,8 @@ func _menu_delete(path: String) -> void:
 	var k := course_files.find(cur_path)
 	if k >= 0:
 		course_idx = k
-	show_menu()
+	_menu_build_tab()
+	_menu_refresh_info()
 
 func _menu_build_random() -> void:
 	UIKit.clear(_menu_random_box)
@@ -677,7 +719,6 @@ func _menu_set_len(k: int) -> void:
 	_menu_refresh_info()
 
 func _menu_refresh_info() -> void:
-	_menu_refit()
 	if _is_random():
 		if rnd_def.is_empty() or int(rnd_def.get("difficulty", -1)) != rnd_diff or int(rnd_def.get("length", -1)) != rnd_len or bool(rnd_def.get("fan", false)) != rnd_fan:
 			var gen := CourseGen.new()
@@ -687,70 +728,66 @@ func _menu_refresh_info() -> void:
 				_menu_start.disabled = true
 				_menu_preview.show_message(gen.last_error)
 				return
-		_menu_info.text = String(rnd_def.get("note", ""))
 		_menu_start.disabled = false
 		var rc := Course.new()
 		if rc.build(rnd_def):
+			_menu_info.text = rc.composition()
 			_menu_preview.show_course(rc)
 		return
 	var c := Course.new()
 	var ok := c.load_file(course_files[course_idx]) if course_files.size() > 0 else false
-	var t := c.note
-	if not ok:
-		t = c.error + (". Usa «Mappa le tessere»." if not c.missing.is_empty() else "")
-	_menu_info.text = t
+	_menu_info.text = c.composition() if ok else c.error + (". Usa «Mappa le tessere»." if not c.missing.is_empty() else "")
 	_menu_start.disabled = not ok
 	if ok:
 		_menu_preview.show_course(c)
 	else:
 		_menu_preview.show_message("Anteprima non disponibile: " + c.error)
 
-func _menu_set_n(n: int) -> void:
-	setup_n = n
-	_menu_rebuild_players()
-	_menu_refit()
-
-func _menu_set_ai(i: int, v: bool) -> void:
-	setup_ai[i] = v
+## Ogni colore: «no» (non corre), «Persona» o «CPU». Servono almeno due slitte.
+func _menu_set_seat(i: int, kind: String) -> void:
+	if kind == "no":
+		if setup_on[i] and setup_n <= 2:
+			return
+		setup_on[i] = false
+	else:
+		setup_on[i] = true
+		setup_ai[i] = kind == "cpu"
 	_menu_rebuild_players()
 
 func _menu_rebuild_players() -> void:
 	UIKit.clear(_menu_count)
-	for n in [2, 3, 4, 5]:
-		var b := UIKit.button(str(n), n == setup_n)
-		b.custom_minimum_size = Vector2(70, 56)
-		b.size_flags_horizontal = 0
-		b.pressed.connect(_menu_set_n.bind(n))
-		_menu_count.add_child(b)
+	var hd := UIKit.heading("Slitte")
+	hd.autowrap_mode = TextServer.AUTOWRAP_OFF
+	hd.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	hd.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	_menu_count.add_child(hd)
 	var humans := 0
-	for i in setup_n:
-		if not setup_ai[i]: humans += 1
-	var summary := UIKit.label("%d %s, %d CPU" % [humans, "persona" if humans == 1 else "persone", setup_n - humans], 18, UIKit.MUTED)
+	for i in setup_on.size():
+		if setup_on[i] and not setup_ai[i]: humans += 1
+	var summary := UIKit.label("%d in gara: %d %s, %d CPU" % [setup_n, humans, "persona" if humans == 1 else "persone", setup_n - humans], 18, UIKit.MUTED)
 	summary.autowrap_mode = TextServer.AUTOWRAP_OFF
 	summary.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_menu_count.add_child(summary)
 	UIKit.clear(_menu_rows)
-	for i in setup_n:
+	for i in setup_on.size():
+		var on: bool = setup_on[i]
 		var r := HBoxContainer.new()
+		r.add_theme_constant_override("separation", 6)
 		var dot := ColorRect.new()
-		dot.color = SledGame.COLORS[i]
+		dot.color = SledGame.COLORS[i] if on else Color(SledGame.COLORS[i], 0.3)
 		dot.custom_minimum_size = Vector2(26, 26)
 		dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 		r.add_child(dot)
-		var nm := UIKit.label("  " + SledGame.NAMES[i], 24)
+		var nm := UIKit.label("  " + SledGame.NAMES[i], 24, UIKit.INK if on else UIKit.MUTED)
 		nm.autowrap_mode = TextServer.AUTOWRAP_OFF
 		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 		r.add_child(nm)
-		var bp := UIKit.button("Persona", not setup_ai[i])
-		bp.custom_minimum_size = Vector2(130, 52)
-		bp.size_flags_horizontal = 0
-		bp.pressed.connect(_menu_set_ai.bind(i, false))
-		r.add_child(bp)
-		var bc := UIKit.button("CPU", setup_ai[i])
-		bc.custom_minimum_size = Vector2(100, 52)
-		bc.size_flags_horizontal = 0
-		bc.pressed.connect(_menu_set_ai.bind(i, true))
-		r.add_child(bc)
+		for opt in [["no", "No", not on, 80], ["human", "Persona", on and not setup_ai[i], 130], ["cpu", "CPU", on and setup_ai[i], 100]]:
+			var b := UIKit.button(opt[1], opt[2])
+			b.custom_minimum_size = Vector2(opt[3], 52)
+			b.size_flags_horizontal = 0
+			b.pressed.connect(_menu_set_seat.bind(i, opt[0]))
+			r.add_child(b)
 		_menu_rows.add_child(r)
 
 func show_help() -> void:
@@ -802,7 +839,7 @@ func start_game() -> void:
 	var def := _menu_course_def()
 	if def.is_empty():
 		return
-	_begin_race(def, setup_ai.slice(0, setup_n), 0)
+	_begin_race(def, _seat_flags(), 0)
 
 ## Definizione del percorso scelto nel menu (la stessa che, online, viaggia agli altri dispositivi).
 func _menu_course_def() -> Dictionary:
@@ -825,9 +862,9 @@ func _begin_race(def: Dictionary, ai_flags: Array, seed_value: int, names := {})
 	game.setup(course, ai_flags, seed_value)
 	game.simultaneous = sim_variant and online.is_empty()
 	for k in names:
-		var idx := int(k)
-		if idx < game.players.size():
-			game.players[idx].name = "%s (%s)" % [SledGame.NAMES[idx], names[k]]
+		for p in game.players:
+			if p.seat == int(k):
+				p.name = "%s (%s)" % [SledGame.NAMES[p.seat], names[k]]
 	board.setup(course, game)
 	slot_order = game.players.duplicate()
 	game.shuffle(slot_order)
@@ -1969,24 +2006,24 @@ func _net() -> Net:
 func _is_mine(p) -> bool:
 	if online.is_empty():
 		return not p.ai
-	return p.id == int(online["seat"])
+	return p.seat == int(online["seat"])
 
 ## Chi decide la prossima mossa di p: "me" (la persona davanti a questo dispositivo),
 ## "cpu" (il computer, su questo dispositivo) oppure "wait" (un altro dispositivo).
 func _ctl(p) -> String:
 	if online.is_empty() or online.get("over", false):
 		return "cpu" if p.ai else "me"
-	if p.id == int(online["seat"]):
+	if p.seat == int(online["seat"]):
 		return "me"
 	if online["role"] != "host":
 		return "wait"
 	if p.ai:
 		return "cpu"
-	if (online["away"] as Dictionary).has(p.id):
+	if (online["away"] as Dictionary).has(p.seat):
 		# è rientrato?
-		var st := await net.seat(online["code"], p.id)
+		var st := await net.seat(online["code"], p.seat)
 		if not st.is_empty() and not st.get("away", false):
-			online["away"].erase(p.id)
+			online["away"].erase(p.seat)
 			return "wait"
 		return "cpu"
 	return "wait"
@@ -2029,7 +2066,7 @@ func _do_act(a: Dictionary, o = null, local_done := false) -> void:
 		_apply_act(a, o, local_done)
 		return
 	var my := race_id
-	a["s"] = cur.id
+	a["s"] = cur.seat
 	var n := int(online["n"])
 	phase = "posting"
 	_refresh()
@@ -2063,7 +2100,7 @@ func _do_act(a: Dictionary, o = null, local_done := false) -> void:
 func _apply_act(a: Dictionary, o = null, local_done := false) -> void:
 	if not online.is_empty() and not online.get("over", false):
 		online["n"] = int(online["n"]) + 1
-		if a.has("s") and int(a["s"]) != cur.id:
+		if a.has("s") and int(a["s"]) != cur.seat:
 			push_warning("Mossa fuori turno: %s (di turno %d)" % [str(a), cur.id])
 	match String(a.get("k", "")):
 		"slot":
@@ -2107,7 +2144,7 @@ func _undo_discard() -> void:
 func _wait_act(kind: String) -> void:
 	var my := race_id
 	var n := int(online["n"])
-	var who: int = cur.id
+	var who: int = cur.seat
 	var t0 := Time.get_ticks_msec()
 	var last_seen = null
 	var seen_t := t0
@@ -2122,7 +2159,7 @@ func _wait_act(kind: String) -> void:
 			_apply_act(a)
 			return
 		var now := Time.get_ticks_msec()
-		if online["role"] == "host" and not game.players[who].ai and polls % 4 == 0:
+		if online["role"] == "host" and not cur.ai and polls % 4 == 0:
 			var st := await net.seat(online["code"], who)
 			if my != race_id or online.is_empty() or int(online["n"]) != n:
 				return
@@ -2269,8 +2306,8 @@ func _online_create() -> void:
 		_on_text("Scrivi il tuo nome.")
 		return
 	var seats := []
-	for i in setup_n:
-		if not setup_ai[i]:
+	for i in setup_on.size():
+		if setup_on[i] and not setup_ai[i]:
 			seats.append(i)
 	if seats.size() < 2:
 		_on_text("Metti su «Persona» almeno due slitte: la prima è la tua, le altre sono i posti per gli amici.")
@@ -2342,18 +2379,20 @@ func _online_start() -> void:
 		online = {}
 		return
 	var seats := Net._as_dict(room.get("seats", {}))
-	if int(online["seat"]) >= setup_n or not seats.has(str(int(online["seat"]))):
+	if not setup_on[int(online["seat"])] or not seats.has(str(int(online["seat"]))):
 		_on_text("Hai cambiato le slitte dopo aver creato la stanza: creane una nuova.")
 		return
 	var ai := []
 	var names := {}
-	for i in setup_n:
+	for i in setup_on.size():
 		var k := str(i)
-		if seats.has(k) and seats[k] is Dictionary:
-			ai.append(false)
+		if not setup_on[i]:
+			ai.append(-1)
+		elif seats.has(k) and seats[k] is Dictionary:
+			ai.append(0)
 			names[k] = str(seats[k].get("name", ""))
 		else:
-			ai.append(true)
+			ai.append(1)
 	var g := {"seed": 1 + randi() % 2000000000, "def": JSON.stringify(def), "ai": ai, "names": names}
 	if not await net.start_room(code, g):
 		_on_text("Non riesco ad avviare la gara (%s)." % net.last_error)
@@ -2375,7 +2414,7 @@ func _online_begin(g: Dictionary, rejoin: bool) -> void:
 	var def = JSON.parse_string(str(g.get("def", ""))) if g.get("def") is String else g.get("def", {})
 	var ai := []
 	for x in g.get("ai", []):
-		ai.append(bool(x))
+		ai.append(x if x is bool else int(x))
 	var names: Dictionary = g.get("names", {}) if g.get("names") is Dictionary else Net._as_dict(g.get("names", {}))
 	_begin_race(def if def is Dictionary else {}, ai, int(g.get("seed", 1)), names)
 	if online["role"] != "host":

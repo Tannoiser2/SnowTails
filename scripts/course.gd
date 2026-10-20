@@ -644,3 +644,34 @@ func next_corner(piece: int) -> Dictionary:
 
 func is_last_piece(pi: int) -> bool:
 	return pi >= pieces.size() - 1
+
+## Riepilogo dei pezzi usati (per il menu): curve, inversioni, rettilinei, pericoli e tratti fanmade.
+func composition() -> String:
+	var n := {}
+	for pc in pieces:
+		var f: Dictionary = pc["face"]
+		var t := String(f.get("type", ""))
+		var sp := String(f.get("special", ""))
+		if t == "fork":
+			n["fork"] = n.get("fork", 0) + 1
+		elif t in ["corner", "uturn", "straight"]:
+			n[t] = n.get(t, 0) + 1
+		if sp in ["saplings", "snowdrift", "chasm", "leap"]:
+			n[sp] = n.get(sp, 0) + 1
+		var m: Dictionary = pc["mods"]
+		if m.has("slope"):
+			var k := "up" if String(m["slope"]) == "up" else "down"
+			n[k] = n.get(k, 0) + 1
+		for k in ["wind", "ice", "fresh", "hut"]:
+			if m.has(k) and m[k]:
+				n[k] = n.get(k, 0) + 1
+	var parts := []
+	for e in [["corner", "curva", "curve"], ["uturn", "inversione", "inversioni"], ["straight", "rettilineo", "rettilinei"],
+			["saplings", "con alberelli", "con alberelli"], ["snowdrift", "con cumulo", "con cumuli"], ["chasm", "crepaccio", "crepacci"],
+			["leap", "Leap of Death", "Leap of Death"], ["up", "salita", "salite"], ["down", "discesa", "discese"],
+			["wind", "col vento", "col vento"], ["ice", "ghiacciato", "ghiacciati"], ["fresh", "con neve fresca", "con neve fresca"],
+			["hut", "baita", "baite"], ["fork", "bivio", "bivi"]]:
+		var k: int = n.get(e[0], 0)
+		if k > 0:
+			parts.append("%d %s" % [k, e[1] if k == 1 else e[2]])
+	return "Pezzi: " + ", ".join(parts) + "."

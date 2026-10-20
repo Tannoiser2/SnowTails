@@ -26,9 +26,10 @@ func _run() -> void:
 	var phase := OS.get_environment("ST_PHASE")
 	main._on_name.text = "Host" if role == "host" else "Ospite"
 	if role == "host":
-		main.course_idx = main.course_files.find("res://data/courses/prova.json")
-		main.setup_n = 3
-		main.setup_ai = [false, false, true, true, true]
+		main.course_idx = main.course_files.find("res://data/courses/bruce.json")
+		# Rosso (host), Blu fuori gara, Giallo (ospite), Verde CPU: i posti seguono i colori
+		main.setup_on = [true, false, true, true, false]
+		main.setup_ai = [false, true, false, true, true]
 		await main._online_create()
 		var code: String = main.online.get("code", "")
 		print("STTEST stanza ", code)

@@ -17,7 +17,8 @@ func _init() -> void:
 	await create_timer(0.3).timeout
 	print("slitte ", main.setup_n, " ai ", main.setup_ai)
 	root.get_texture().get_image().save_png("/tmp/shots/menu.png")
-	main.course_idx = main.course_files.find("res://data/courses/prova.json")
+	main.course_files.append("res://data/courses/prova.json")
+	main.course_idx = main.course_files.size() - 1
 	main._menu_refresh_info()
 	main.start_game()
 	await create_timer(2.5).timeout

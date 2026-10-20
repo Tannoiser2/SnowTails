@@ -6,7 +6,8 @@ func _init() -> void:
 	root.add_child(main)
 	await create_timer(0.6).timeout
 	root.get_texture().get_image().save_png("/tmp/shots/%s_menu.png" % tag)
-	main.course_idx = main.course_files.find("res://data/courses/prova.json")
+	main.course_files.append("res://data/courses/prova.json")
+	main.course_idx = main.course_files.size() - 1
 	main._menu_refresh_info()
 	main.setup_n = 4
 	main.setup_ai = [false, true, true, true, true]
