@@ -149,7 +149,7 @@ func _build_hud() -> void:
 	var bh := UIKit.button("Regole")
 	bh.custom_minimum_size = Vector2(0, 38)
 	bh.add_theme_font_size_override("font_size", 17)
-	bh.pressed.connect(show_help)
+	bh.pressed.connect(show_help.bind(false))
 	row.add_child(bh)
 	var bm := UIKit.button("Menu")
 	bm.custom_minimum_size = Vector2(0, 38)
@@ -421,7 +421,16 @@ func show_menu() -> void:
 	tl.autowrap_mode = TextServer.AUTOWRAP_OFF
 	tl.position = Vector2(0, -12)
 	th.add_child(tl)
-	left.add_child(th)
+	var trow := HBoxContainer.new()
+	th.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	trow.add_child(th)
+	var brul := UIKit.button("Regole")
+	brul.custom_minimum_size = Vector2(130, 48)
+	brul.size_flags_horizontal = 0
+	brul.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	brul.pressed.connect(show_help.bind(false))
+	trow.add_child(brul)
+	left.add_child(trow)
 	left.add_child(UIKit.heading("Percorso"))
 	# tre schede: percorsi della lista, editor, pista casuale
 	_menu_tabs = HBoxContainer.new()
@@ -866,48 +875,149 @@ func _menu_rebuild_players() -> void:
 			r.add_child(b)
 		_menu_rows.add_child(r)
 
-func show_help() -> void:
+## Il percorso scelto (o in corso) usa segmenti fanmade?
+func _uses_fan() -> bool:
+	if phase != "menu" and course != null:
+		return _course_has_fan(course)
+	if _is_tour():
+		for f in tour_sel:
+			var c := Course.new()
+			if c.load_file(f) and _course_has_fan(c):
+				return true
+		return false
+	if _is_random():
+		return rnd_fan
+	var c := Course.new()
+	return course_files.size() > 0 and c.load_file(course_files[course_idx]) and _course_has_fan(c)
+
+func _course_has_fan(c: Course) -> bool:
+	for pc in c.pieces:
+		if not (pc["mods"] as Dictionary).is_empty() or String(pc["face"].get("type", "")) == "fork":
+			return true
+	return false
+
+## Una voce delle regole: immagine (o disegno) a sinistra, titolo e spiegazione.
+func _rule_item(icon: Control, title: String, text: String) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 14)
+	var box := CenterContainer.new()
+	box.custom_minimum_size = Vector2(92, 72)
+	box.add_child(icon)
+	h.add_child(box)
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 2)
+	var t := UIKit.label(title, 20, UIKit.INK)
+	t.add_theme_font_override("font", UIKit.font(UIKit.F_BOLD))
+	col.add_child(t)
+	col.add_child(UIKit.label(text, 17, UIKit.MUTED))
+	h.add_child(col)
+	return h
+
+func _rule_img(path: String, w := 84.0, h := 64.0) -> Control:
+	var tr := TextureRect.new()
+	if ResourceLoader.exists(path):
+		tr.texture = load(path)
+	tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+	tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+	tr.custom_minimum_size = Vector2(w, h)
+	return tr
+
+func _rule_text(t: String) -> RichTextLabel:
+	var r := UIKit.rich(19)
+	r.add_theme_color_override("default_color", UIKit.INK)
+	r.text = t
+	return r
+
+var _help_fan := false
+
+func show_help(force_fan := false) -> void:
+	var from_menu := phase == "menu" or modal_root != null and _menu_tab_box != null and is_instance_valid(_menu_tab_box) and _menu_tab_box.is_inside_tree()
+	var fan := force_fan or _uses_fan()
+	var land := _is_landscape()
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
-	vb.add_child(UIKit.title("Come si gioca", 42))
-	var r := UIKit.rich(21)
-	r.add_theme_color_override("default_color", UIKit.INK)
-	r.text = ("""[b]La slitta.[/b] Due cani e un freno, tutti a 3 all'inizio. Velocità = cane sinistro + cane destro − freno. Deriva = differenza fra i cani: ti sposti in diagonale verso il cane più forte (mai più della velocità), nei passi che scegli tu.
+	var head := HBoxContainer.new()
+	var tt := UIKit.title("Regole", 44)
+	tt.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	head.add_child(tt)
+	var close := UIKit.cta("Chiudi")
+	close.custom_minimum_size = Vector2(150, 52)
+	close.size_flags_horizontal = 0
+	close.pressed.connect(func():
+		if from_menu:
+			show_menu()
+		else:
+			_close_modal())
+	head.add_child(close)
+	vb.add_child(head)
+	var sc := ScrollContainer.new()
+	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	var vh := get_viewport().get_visible_rect().size.y
+	sc.custom_minimum_size = Vector2(0, max(360.0, vh * 0.74))
+	vb.add_child(sc)
+	var body: BoxContainer = HBoxContainer.new() if land else VBoxContainer.new()
+	body.add_theme_constant_override("separation", 30)
+	body.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	sc.add_child(body)
+	var c1 := VBoxContainer.new()
+	c1.add_theme_constant_override("separation", 10)
+	c1.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var c2 := VBoxContainer.new()
+	c2.add_theme_constant_override("separation", 10)
+	c2.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	body.add_child(c1)
+	body.add_child(c2)
+	# --- regolamento ---
+	c1.add_child(UIKit.heading("Come si gioca"))
+	c1.add_child(_rule_text("""[b]Lo scopo.[/b] Tagliare il traguardo per primi con la propria slitta, senza distruggerla.
 
-[b]Il turno.[/b] Giochi da 1 a 3 carte dello stesso valore, al massimo una per spazio. Le carte sui cani restano; quella sul freno lo imposta e va negli scarti. Poi torni a 5 carte. Le ammaccature occupano posto in mano e non si scartano.
+[b]La slitta.[/b] Due cani e un freno, tutti a 3 all'inizio. Velocità = cane sinistro + cane destro − freno. Deriva = differenza fra i cani: ti sposti di lato verso il cane più forte (mai più della velocità), nei passi che scegli tu.
+
+[b]Il turno.[/b] Giochi da 1 a 3 carte dello stesso valore, al massimo una per spazio. Le carte sui cani restano; quella sul freno lo imposta e va negli scarti. Poi muovi e torni a 5 carte. Le ammaccature occupano posto in mano e non si scartano.
+
+[b]Ordine.[/b] Muove prima chi è in testa, poi gli altri in ordine di posizione.
 
 [b]Equilibrio.[/b] Con i cani uguali puoi aggiungere un bonus pari alla tua posizione, tutto dritto, a fine movimento. Non al primo turno.
 
-[b]Pericoli.[/b] Entrare in una curva oltre il limite: un'ammaccatura per punto di troppo (il bonus conta). Leap of Death: la spaccatura va saltata a velocità 5 o più, altrimenti un'ammaccatura per ogni punto che manca; chi si ferma sulle caselle della spaccatura non pesca. Bordo: ti fermi e prendi un'ammaccatura. Tamponamento: ti fermi dietro e non peschi. Alla quinta ammaccatura la slitta è distrutta.
+[b]Pericoli.[/b] Curva oltre il limite: un'ammaccatura per punto di troppo (il bonus conta). Bordo: ti fermi e prendi un'ammaccatura. Tamponamento: ti fermi dietro e non peschi. Alla quinta ammaccatura la slitta è distrutta.
 
-[b]Fine.[/b] Si corre finché tutte le slitte hanno tagliato il traguardo; chi è arrivato smette di muovere. In classifica conta prima il giro in cui si taglia il traguardo, poi, a parità di giro, chi è andato più lontano oltre la linea.
+[b]Fine.[/b] Si corre finché tutte le slitte hanno tagliato il traguardo. In classifica conta prima il giro in cui si taglia il traguardo, poi chi è andato più lontano oltre la linea."""))
+	c1.add_child(UIKit.heading("Varianti"))
+	c1.add_child(_rule_text("""[b]Simultaneo.[/b] Tutti programmano la mossa (carte e casella d'arrivo) senza vedere quella degli altri, poi le slitte partono insieme: chi ha più caselle da fare va più veloce. Due slitte non entrano mai nella stessa casella nello stesso momento: se possono la evitano, altrimenti entra la più veloce (a parità, chi era più avanti) e l'altra si ferma prima con mezza ammaccatura.
 
-[b]Segmenti fanmade.[/b] Salita: chi ci passa fa al massimo %d punti di movimento. Discesa: chi parte in discesa va almeno a %d, anche frenando. Neve fresca: ogni casella coi cumuli costa 2 punti; la prima slitta che ci passa la spazza via. Ghiaccio: chi entra derivando continua a derivare finché è sul ghiaccio, e a fine movimento scivola avanti di una casella. Vento: ogni 2 caselle percorse sulla tessera ti sposta di una corsia nel verso della manica a vento; contro il bordo è un'ammaccatura. Baita: chi si ferma sulla casella accanto alla baita ripara metà dei danni (arrotondando a suo favore), ma non pesca. Bivio: un'isola di abeti divide la pista; da una parte neve fresca, dall'altra alberelli.
-
-[b]Variante simultanea.[/b] Se nel menu scegli «Simultaneo», a ogni giro tutti programmano la mossa (carte e casella d'arrivo) senza vedere quella degli altri, poi le slitte partono insieme. Partono e arrivano tutte insieme, quindi chi ha più caselle da fare va più veloce. Due slitte non entrano mai nella stessa casella nello stesso momento: se possono, scelgono una rotta equivalente che evita il contatto; se non possono, entra chi va più veloce (a parità, chi era più avanti a inizio giro) e l'altra si ferma prima e prende mezza ammaccatura (due mezze fanno un'ammaccatura). Il bonus di equilibrio si calcola sulle posizioni di inizio giro.
-
-[b]Comandi.[/b] Un dito trascina la pista; due dita: avvicini o allontani, ruoti la vista e, spostandole insieme in su o in giù, cambi l'inclinazione. Col mouse: rotellina per lo zoom, tasto destro per ruotare e inclinare. «Segui» fa girare la telecamera nel senso di marcia della slitta di turno.
-
-[b]Tastiera.[/b] 1–5 sceglie una carta di quel valore; A, S, D (o frecce sinistra, giù, destra) la mettono su cane sinistro, freno, cane destro; Invio muove; Backspace riprende le carte; Esc torna indietro o apre il menu. Tocca una carta e poi uno spazio della plancia; poi «Muovi» e tocca la destinazione.""") % [SledGame.UP_MAX, SledGame.DOWN_MIN]
-	if _is_landscape():
-		# in orizzontale due colonne: il testo sta tutto nella finestra senza rimpicciolirsi troppo
-		var paras: PackedStringArray = r.text.split("\n\n")
-		var half := int(ceil(paras.size() / 2.0))
-		var cols := HBoxContainer.new()
-		cols.add_theme_constant_override("separation", 28)
-		for part in [paras.slice(0, half), paras.slice(half)]:
-			var rc := UIKit.rich(21)
-			rc.add_theme_color_override("default_color", UIKit.INK)
-			rc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-			rc.text = "\n\n".join(part)
-			cols.add_child(rc)
-		vb.add_child(cols)
+[b]Gran Tour.[/b] Più piste di fila con le stesse slitte. A ogni gara il primo prende tante punti quante sono le slitte meno una, poi a scalare; una slitta distrutta prende 0. Vince chi ha più punti alla fine."""))
+	c1.add_child(UIKit.heading("Comandi"))
+	c1.add_child(_rule_text("""Un dito trascina la pista; due dita avvicinano, ruotano e, spostate insieme in su o in giù, inclinano la vista. Col mouse: rotellina per lo zoom, tasto destro per ruotare. «Segui» fa girare la telecamera con la slitta di turno.
+Tastiera: 1–5 sceglie una carta; A, S, D (o frecce) la mettono su cane sinistro, freno, cane destro; Invio muove; Backspace riprende le carte; Esc torna indietro o apre il menu."""))
+	# --- icone ---
+	c2.add_child(UIKit.heading("Sulla pista"))
+	c2.add_child(_rule_item(_rule_img("res://assets/rules/limit.png"), "Limite della curva", "Il numero nel cerchio rosso, all'ingresso di curve e inversioni, è la velocità massima. Ogni punto in più (bonus compreso) è un'ammaccatura."))
+	c2.add_child(_rule_item(_rule_img("res://assets/rules/leap_sign.png"), "Leap of Death", "La spaccatura fra i due cartelli va saltata a velocità 5 o più; per ogni punto che manca, un'ammaccatura. Chi si ferma sulle caselle della spaccatura non pesca."))
+	c2.add_child(_rule_item(_rule_img("res://assets/rules/sapling.png"), "Alberelli", "Chi entra in una casella con un alberello lo travolge e prende un'ammaccatura per ogni alberello. Poi l'alberello sparisce."))
+	c2.add_child(_rule_item(_rule_img("res://assets/tiles/snowdrift_p15a.webp", 92, 70), "Cumulo e crepaccio", "Il cumulo di neve e il crepaccio chiudono alcune corsie: sono come il bordo della pista, chi ci finisce contro si ferma e prende un'ammaccatura."))
+	c2.add_child(_rule_item(_rule_img("res://assets/tiles/start_p21.webp", 70, 72), "Partenza e traguardo", "Si sceglie a turno la casella di partenza, numerate da 1 a 5. Il traguardo è la linea rossa: conta quanto si va oltre."))
+	c2.add_child(UIKit.heading("Segni del gioco"))
+	c2.add_child(_rule_item(RuleIcon.new("dest"), "Destinazioni", "Gli anelli che pulsano sono le caselle dove puoi arrivare: tocca quella che vuoi."))
+	c2.add_child(_rule_item(RuleIcon.new("path"), "Percorso", "La linea sottile col puntino in ogni casella è la strada che farà la slitta."))
+	c2.add_child(_rule_item(RuleIcon.new("drift"), "Deriva", "Il tratto largo e chiaro è uno spostamento di lato verso il cane più forte."))
+	c2.add_child(_rule_item(RuleIcon.new("dent"), "Ammaccature", "Il numero rosso sopra una destinazione dice quante ammaccature prendi arrivando lì."))
+	# --- fanmade ---
+	if fan:
+		c2.add_child(UIKit.heading("Segmenti fanmade"))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_up.png", 64, 64), "Salita", "Chi passa sulla tessera fa al massimo %d punti di movimento." % SledGame.UP_MAX))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_down.png", 64, 64), "Discesa", "Chi parte in discesa va almeno a %d, anche frenando." % SledGame.DOWN_MIN))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_fresh.png", 64, 64), "Neve fresca", "Ogni casella coi cumuli costa 2 punti di movimento; la prima slitta che ci passa la spazza via."))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_ice.png", 64, 64), "Ghiaccio", "Chi entra derivando continua a derivare finché è sul ghiaccio; a fine movimento scivola avanti di una casella."))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_wind.png", 64, 64), "Vento", "Ogni 2 caselle percorse sulla tessera ti sposta di una corsia nel verso della manica a vento; contro il bordo è un'ammaccatura."))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_hut.png", 64, 64), "Baita", "Chi si ferma sulla casella accanto alla baita ripara metà delle ammaccature (arrotondando a suo favore), ma non pesca."))
+		c2.add_child(_rule_item(_rule_img("res://assets/rules/fork_sign.png", 64, 64), "Bivio", "Un'isola di abeti divide la pista in due rami con un numero diverso di caselle: da una parte neve fresca, dall'altra alberelli."))
 	else:
-		vb.add_child(r)
-	var b := UIKit.button("Chiudi", true)
-	b.pressed.connect(_close_modal)
-	vb.add_child(b)
-	_modal(vb, 1180.0 if _is_landscape() else 700.0)
+		var bf := UIKit.button("Mostra anche le regole fanmade")
+		bf.custom_minimum_size = Vector2(0, 50)
+		bf.pressed.connect(func(): show_help(true))
+		c2.add_child(bf)
+	_modal(vb, 1180.0 if land else 700.0, from_menu)
 
 # ======================= PARTITA =======================
 func start_game() -> void:
