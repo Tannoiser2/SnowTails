@@ -381,6 +381,12 @@ var _menu_tab_box: VBoxContainer
 var _menu_tabs: HBoxContainer
 var _menu_sim_row: HBoxContainer
 var _menu_sim_lbl: Label
+var _menu_thumbs: Array = []
+var tour_mode := false         # «Gran Tour» scelto nella lista
+var tour_sel: Array = []       # piste del Gran Tour (percorsi dei file)
+var _tour_sel_init := false
+var tour := {}                 # Gran Tour in corso: files, i, flags, tot, races, names
+var _menu_tour_box: ScrollContainer
 var _del_armed := ""
 const MENU_TAB_H := 270.0      # altezza fissa delle schede: la finestra non cambia misura
 
@@ -404,6 +410,7 @@ func show_menu() -> void:
 	if menu_tab == "":
 		menu_tab = "random" if _is_random() else "list"
 	_del_armed = ""
+	_menu_thumbs = []
 	var left := VBoxContainer.new()
 	left.add_theme_constant_override("separation", 12)
 	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -433,6 +440,11 @@ func show_menu() -> void:
 	_menu_preview = CoursePreview.new()
 	_menu_preview.custom_minimum_size = Vector2(0, 230 if land else 250)
 	left.add_child(_menu_preview)
+	_menu_tour_box = ScrollContainer.new()
+	_menu_tour_box.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
+	_menu_tour_box.custom_minimum_size = _menu_preview.custom_minimum_size
+	_menu_tour_box.visible = false
+	left.add_child(_menu_tour_box)
 	var right := VBoxContainer.new()
 	right.add_theme_constant_override("separation", 10)
 	right.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -529,6 +541,7 @@ func _menu_build_sim() -> void:
 
 func _menu_pick_course(i: int) -> void:
 	course_idx = i
+	tour_mode = false
 	_menu_build_tab()
 	_menu_refresh_info()
 
@@ -564,17 +577,25 @@ func _menu_build_tab() -> void:
 		var sc: ScrollContainer = l[0]
 		var vb: VBoxContainer = l[1]
 		var mine := false
+		var bt := UIKit.button("Gran Tour: più piste, classifica a punti", tour_mode)
+		bt.custom_minimum_size = Vector2(0, 46)
+		bt.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		bt.pressed.connect(func():
+			tour_mode = true
+			_menu_build_tab()
+			_menu_refresh_info())
+		vb.add_child(bt)
 		vb.add_child(UIKit.label("Ufficiali", 18, UIKit.MUTED))
 		for i in course_files.size():
 			if String(course_files[i]).begins_with("user://") and not mine:
 				mine = true
 				vb.add_child(UIKit.label("Create da te", 18, UIKit.MUTED))
-			var b := UIKit.button(_course_name(course_files[i]), i == course_idx)
+			var b := UIKit.button(_course_name(course_files[i]), i == course_idx and not tour_mode)
 			b.custom_minimum_size = Vector2(0, 46)
 			b.alignment = HORIZONTAL_ALIGNMENT_LEFT
 			b.pressed.connect(_menu_pick_course.bind(i))
 			vb.add_child(b)
-			if i == course_idx:
+			if i == course_idx and not tour_mode:
 				_scroll_to(sc, b)
 		if not mine:
 			vb.add_child(UIKit.label("Create da te", 18, UIKit.MUTED))
@@ -718,7 +739,21 @@ func _menu_set_len(k: int) -> void:
 	_menu_build_random()
 	_menu_refresh_info()
 
+func _is_tour() -> bool:
+	return menu_tab == "list" and tour_mode
+
 func _menu_refresh_info() -> void:
+	var tr := _is_tour()
+	_menu_preview.visible = not tr
+	_menu_tour_box.visible = tr
+	if tr:
+		_menu_build_tour()
+		var pts := []
+		for k in setup_n:
+			pts.append("%d° %d" % [k + 1, setup_n - 1 - k])
+		_menu_info.text = "Gran Tour: %d %s nell'ordine della lista. Punti a ogni gara: %s." % [tour_sel.size(), "pista" if tour_sel.size() == 1 else "piste", ", ".join(pts)]
+		_menu_start.disabled = tour_sel.is_empty()
+		return
 	if _is_random():
 		if rnd_def.is_empty() or int(rnd_def.get("difficulty", -1)) != rnd_diff or int(rnd_def.get("length", -1)) != rnd_len or bool(rnd_def.get("fan", false)) != rnd_fan:
 			var gen := CourseGen.new()
@@ -743,6 +778,41 @@ func _menu_refresh_info() -> void:
 	else:
 		_menu_preview.show_message("Anteprima non disponibile: " + c.error)
 
+## Scelta delle piste del Gran Tour (al posto dell'anteprima).
+func _menu_build_tour() -> void:
+	var keep := _menu_tour_box.scroll_vertical
+	UIKit.clear(_menu_tour_box)
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 6)
+	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	_menu_tour_box.add_child(vb)
+	var valid := []
+	for f in course_files:
+		var c := Course.new()
+		if c.load_file(f):
+			valid.append([f, c.title if c.title != "" else String(f).get_file().get_basename()])
+	if not _tour_sel_init:
+		_tour_sel_init = true
+		for v in valid:
+			if not String(v[0]).begins_with("user://"):
+				tour_sel.append(v[0])
+	var ok_paths := valid.map(func(v): return v[0])
+	tour_sel = tour_sel.filter(func(f): return ok_paths.has(f))
+	vb.add_child(UIKit.label("Piste del Gran Tour (tocca per includere o togliere)", 17, UIKit.MUTED))
+	for v in valid:
+		var on: bool = tour_sel.has(v[0])
+		var b := UIKit.button(("✓  " if on else "     ") + String(v[1]) + ("  ✎" if String(v[0]).begins_with("user://") else ""), on)
+		b.custom_minimum_size = Vector2(0, 44)
+		b.alignment = HORIZONTAL_ALIGNMENT_LEFT
+		b.pressed.connect(func():
+			if tour_sel.has(v[0]):
+				tour_sel.erase(v[0])
+			else:
+				tour_sel.append(v[0])
+			_menu_refresh_info())
+		vb.add_child(b)
+	(func(): _menu_tour_box.scroll_vertical = keep).call_deferred()
+
 ## Ogni colore: «no» (non corre), «Persona» o «CPU». Servono almeno due slitte.
 func _menu_set_seat(i: int, kind: String) -> void:
 	if kind == "no":
@@ -753,6 +823,8 @@ func _menu_set_seat(i: int, kind: String) -> void:
 		setup_on[i] = true
 		setup_ai[i] = kind == "cpu"
 	_menu_rebuild_players()
+	if _is_tour():
+		_menu_refresh_info()
 
 func _menu_rebuild_players() -> void:
 	UIKit.clear(_menu_count)
@@ -768,16 +840,22 @@ func _menu_rebuild_players() -> void:
 	summary.autowrap_mode = TextServer.AUTOWRAP_OFF
 	summary.size_flags_vertical = Control.SIZE_SHRINK_CENTER
 	_menu_count.add_child(summary)
+	# le miniature 3D restano le stesse: si staccano prima di rifare le righe
+	for t in _menu_thumbs:
+		if is_instance_valid(t) and t.get_parent():
+			t.get_parent().remove_child(t)
 	UIKit.clear(_menu_rows)
 	for i in setup_on.size():
 		var on: bool = setup_on[i]
 		var r := HBoxContainer.new()
 		r.add_theme_constant_override("separation", 6)
-		var dot := ColorRect.new()
-		dot.color = SledGame.COLORS[i] if on else Color(SledGame.COLORS[i], 0.3)
-		dot.custom_minimum_size = Vector2(26, 26)
-		dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
-		r.add_child(dot)
+		if i >= _menu_thumbs.size() or not is_instance_valid(_menu_thumbs[i]):
+			if i >= _menu_thumbs.size():
+				_menu_thumbs.resize(i + 1)
+			_menu_thumbs[i] = SledThumb.new(SledGame.COLORS[i])
+		var th: SledThumb = _menu_thumbs[i]
+		th.set_active(on)
+		r.add_child(th)
 		var nm := UIKit.label("  " + SledGame.NAMES[i], 24, UIKit.INK if on else UIKit.MUTED)
 		nm.autowrap_mode = TextServer.AUTOWRAP_OFF
 		nm.size_flags_horizontal = Control.SIZE_EXPAND_FILL
@@ -836,10 +914,153 @@ func show_help() -> void:
 # ======================= PARTITA =======================
 func start_game() -> void:
 	online = {}
+	tour = {}
+	if _is_tour():
+		var files := []
+		for f in course_files:
+			if tour_sel.has(f):
+				files.append(f)
+		if files.is_empty():
+			return
+		tour = {"files": files, "i": 0, "flags": _seat_flags(), "tot": {}, "races": [], "names": {}}
+		_tour_race()
+		return
 	var def := _menu_course_def()
 	if def.is_empty():
 		return
 	_begin_race(def, _seat_flags(), 0)
+
+## Gran Tour: corre la pista numero tour.i con le stesse slitte.
+func _tour_race() -> void:
+	var d = JSON.parse_string(FileAccess.get_file_as_string(tour["files"][tour["i"]]))
+	if not d is Dictionary:
+		_toast("Percorso non valido")
+		return
+	_begin_race(d, tour["flags"], 0)
+	game.log_text = "Gran Tour, gara %d di %d: [b]%s[/b]." % [int(tour["i"]) + 1, tour["files"].size(), course.title]
+	_refresh()
+
+## Punti della gara appena finita: in N slitte il primo prende N−1, poi a scalare; distrutta 0.
+func _tour_score() -> void:
+	if (tour["races"] as Array).size() > int(tour["i"]):
+		return
+	var n := game.players.size()
+	var race := []
+	var k := 0
+	for r in game.results:
+		var p = r["p"]
+		var pts: int = 0 if String(r["st"]) == "distrutta" else max(0, n - 1 - k)
+		race.append({"seat": p.seat, "pts": pts, "st": String(r["st"])})
+		tour["tot"][p.seat] = int(tour["tot"].get(p.seat, 0)) + pts
+		tour["names"][p.seat] = p.name
+		k += 1
+	tour["races"].append(race)
+
+func _tour_row(pos: String, seat: int, name: String, value: String, sub := "", hi := false) -> PanelContainer:
+	var card := PanelContainer.new()
+	card.add_theme_stylebox_override("panel", UIKit.box(Color("fff6d6") if hi else UIKit.SOFT, 14, SledGame.COLORS[seat] if hi else Color(0, 0, 0, 0), 2 if hi else 0, 10))
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	card.add_child(row)
+	var pl := UIKit.label(pos, 26)
+	pl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	pl.custom_minimum_size = Vector2(34, 0)
+	pl.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	pl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(pl)
+	var dot := ColorRect.new()
+	dot.color = SledGame.COLORS[seat]
+	dot.custom_minimum_size = Vector2(10, 0)
+	row.add_child(dot)
+	var col := VBoxContainer.new()
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	col.add_theme_constant_override("separation", 0)
+	var nm := UIKit.label(name, 21)
+	nm.autowrap_mode = TextServer.AUTOWRAP_OFF
+	nm.clip_text = true
+	col.add_child(nm)
+	if sub != "":
+		col.add_child(UIKit.label(sub, 15, UIKit.MUTED))
+	row.add_child(col)
+	var vl := UIKit.label(value, 26, UIKit.ACCENT_DARK)
+	vl.autowrap_mode = TextServer.AUTOWRAP_OFF
+	vl.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	row.add_child(vl)
+	return card
+
+## Classifica di fine gara nel Gran Tour: la gara appena corsa e il totale.
+func _tour_results() -> void:
+	_tour_score()
+	var i := int(tour["i"])
+	var m: int = tour["files"].size()
+	var last := i >= m - 1
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 10)
+	vb.add_child(UIKit.title("Gran Tour concluso" if last else "Gran Tour", 46))
+	vb.add_child(UIKit.label("Gara %d di %d: %s, dopo %d giri" % [i + 1, m, course.title, game.round_n], 19, UIKit.MUTED))
+	var cols: BoxContainer = HBoxContainer.new() if _is_landscape() else VBoxContainer.new()
+	cols.add_theme_constant_override("separation", 24)
+	var a := VBoxContainer.new()
+	a.add_theme_constant_override("separation", 6)
+	a.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	a.add_child(UIKit.heading("Questa gara"))
+	var race: Array = tour["races"][i]
+	var k := 0
+	for r in race:
+		k += 1
+		var dist: bool = r["st"] == "distrutta"
+		a.add_child(_tour_row("✕" if dist else str(k), r["seat"], tour["names"][r["seat"]], "+%d" % r["pts"], r["st"], k == 1 and not dist))
+	cols.add_child(a)
+	var b := VBoxContainer.new()
+	b.add_theme_constant_override("separation", 6)
+	b.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	b.add_child(UIKit.heading("Classifica generale"))
+	# a parità di punti conta il piazzamento nell'ultima gara
+	var order := []
+	for r in race:
+		order.append(int(r["seat"]))
+	var seats := order.duplicate()
+	seats.sort_custom(func(x, y):
+		var tx := int(tour["tot"].get(x, 0))
+		var ty := int(tour["tot"].get(y, 0))
+		return tx > ty or (tx == ty and order.find(x) < order.find(y)))
+	var pos := 0
+	var prev := -1
+	for j in seats.size():
+		var t := int(tour["tot"].get(seats[j], 0))
+		if t != prev:
+			pos = j + 1
+			prev = t
+		b.add_child(_tour_row(str(pos), seats[j], tour["names"][seats[j]], "%d pt" % t, "", j == 0 and last))
+	cols.add_child(b)
+	vb.add_child(cols)
+	if last:
+		vb.add_child(UIKit.label("Vince il Gran Tour: %s" % tour["names"][seats[0]], 24, UIKit.INK))
+	var acts := HBoxContainer.new()
+	acts.add_theme_constant_override("separation", 10)
+	var b0 := UIKit.button("Rivedi la gara")
+	b0.pressed.connect(start_replay)
+	b0.disabled = game.history.is_empty()
+	acts.add_child(b0)
+	var b1 := UIKit.button("Guarda la pista")
+	b1.pressed.connect(_close_modal)
+	acts.add_child(b1)
+	if last:
+		var b2 := UIKit.cta("Nuova gara")
+		b2.pressed.connect(func():
+			tour = {}
+			show_menu())
+		acts.add_child(b2)
+	else:
+		var nc := Course.new()
+		nc.load_file(tour["files"][i + 1])
+		var b3 := UIKit.cta("Prossima: " + nc.title)
+		b3.pressed.connect(func():
+			tour["i"] = i + 1
+			_tour_race())
+		acts.add_child(b3)
+	vb.add_child(acts)
+	_modal(vb, 1000 if _is_landscape() else 700)
 
 ## Definizione del percorso scelto nel menu (la stessa che, online, viaggia agli altri dispositivi).
 func _menu_course_def() -> Dictionary:
@@ -1021,6 +1242,9 @@ func _show_results() -> void:
 	var r0 = game.results[0] if game.results.size() > 0 else null
 	game.log_text = ("[b]%s[/b] vince la corsa!" % r0["p"].name) if r0 and String(r0["st"]).begins_with("arrivata") else "Corsa finita."
 	_refresh()
+	if not tour.is_empty() and online.is_empty():
+		_tour_results()
+		return
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 10)
 	vb.add_child(UIKit.title("Classifica", 48))
@@ -2283,6 +2507,9 @@ func _player_name() -> String:
 	return _on_name.text.strip_edges() if is_instance_valid(_on_name) else ""
 
 func _menu_start_pressed() -> void:
+	if online.get("lobby", false) and _is_tour():
+		_on_text("Il Gran Tour è solo per le partite su questo dispositivo: scegli una pista singola.")
+		return
 	if online.get("lobby", false):
 		if online["role"] == "host":
 			_online_start()
