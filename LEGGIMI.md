@@ -39,6 +39,13 @@ Authentication è già attivo.
 due istanze del gioco (`ST_ROLE=host` e `guest`; con `ST_PHASE=drop` e poi `back` l'ospite esce a metà
 e rientra) e alla fine ognuna stampa l'impronta della gara, che deve coincidere.
 
+**Schermo condiviso.** «Schermo condiviso: si gioca col telefono» crea una stanza in cui questo
+schermo non ha una slitta: mostra codice e QR (`scripts/qr.gd`, codice QR fatto in casa) con
+l'indirizzo `…/SnowTails/?r=CODICE`. Il telefono che lo apre va dritto alla schermata di ingresso
+(nome e colore della slitta) e poi gioca come nell'online normale, a turni o simultaneo.
+`tests/table_play.gd` prova schermo + due telefoni sul finto Firebase (`ST_SIM=1` per il simultaneo,
+`ST_PHASE=drop` per un telefono che se ne va a metà).
+
 ## Icona
 L'icona dell'app (il muso dell'husky dalla copertina) è in `assets/icon/`:
 - `icona.png` (1024×1024): icona del progetto, già impostata; va bene anche per macOS e per
@@ -236,7 +243,9 @@ quest'ordine: chi resta ferma, poi chi va più veloce, a parità chi era più av
 giro. Ognuna, se può, prende una rotta equivalente (stesso arrivo, stessa velocità, non più
 ammaccature) che evita il contatto; se non può, si ferma prima e prende mezza ammaccatura
 (due mezze fanno un'ammaccatura) e pesca normalmente. Gli alberelli li travolge chi ci passa
-per primo. Per ora solo nelle partite su un dispositivo, non online.
+per primo. Funziona anche online e con lo schermo condiviso: ogni slitta ha il suo numero di
+mossa nel giro (`k: "prog"`), chi ha creato la stanza scrive quelle delle CPU e di chi non risponde,
+e quando ci sono tutte ogni dispositivo risolve il giro allo stesso modo.
 
 ## Come funziona il movimento
 Ogni passo è «avanti» (un collegamento della rete) oppure «deriva» (una diagonale

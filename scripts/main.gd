@@ -42,6 +42,10 @@ var setup_ai := [false, true, true, true, true]
 var sim_variant := false
 signal sim_step
 var sim_progs := {}
+var sim_racers: Array = []     # online simultaneo: slitte che programmano in questo giro (in ordine)
+var sim_base := 0              # online simultaneo: numero della prima mossa del giro
+var _posting_prog := false
+var _join_want := -1           # colore scelto dal telefono che entra nella stanza
 var course_files: Array = []
 var course_idx := 0
 
@@ -74,6 +78,15 @@ func _ready() -> void:
 	_build_hud()
 	_scan_courses()
 	show_menu()
+	# telefono aperto dal QR dello schermo condiviso: indirizzo con ?r=CODICE
+	var rc := OS.get_environment("ST_JOIN")
+	if OS.has_feature("web"):
+		var v = JavaScriptBridge.eval("new URLSearchParams(location.search).get('r') || ''")
+		if v != null:
+			rc = str(v)
+	rc = rc.strip_edges().to_upper()
+	if rc.length() == 4:
+		_phone_join(rc)
 
 # ======================= HUD =======================
 func _build_hud() -> void:
@@ -986,6 +999,8 @@ func show_help(force_fan := false) -> void:
 	c1.add_child(UIKit.heading("Varianti"))
 	c1.add_child(_rule_text("""[b]Simultaneo.[/b] Tutti programmano la mossa (carte e casella d'arrivo) senza vedere quella degli altri, poi le slitte partono insieme: chi ha più caselle da fare va più veloce. Due slitte non entrano mai nella stessa casella nello stesso momento: se possono la evitano, altrimenti entra la più veloce (a parità, chi era più avanti) e l'altra si ferma prima con mezza ammaccatura.
 
+[b]Schermo condiviso.[/b] Uno schermo grande (TV, computer, tablet) crea la stanza e mostra codice e QR: ogni giocatore lo inquadra col telefono, sceglie la slitta e da lì gioca le carte e sceglie la casella. Sullo schermo grande si vede la pista e, nel simultaneo, chi ha già programmato e poi le slitte che partono insieme.
+
 [b]Gran Tour.[/b] Più piste di fila con le stesse slitte. A ogni gara il primo prende tante punti quante sono le slitte meno una, poi a scalare; una slitta distrutta prende 0. Vince chi ha più punti alla fine."""))
 	c1.add_child(UIKit.heading("Comandi"))
 	c1.add_child(_rule_text("""Un dito trascina la pista; due dita avvicinano, ruotano e, spostate insieme in su o in giù, inclinano la vista. Col mouse: rotellina per lo zoom, tasto destro per ruotare. «Segui» fa girare la telecamera con la slitta di turno.
@@ -1189,7 +1204,7 @@ func _begin_race(def: Dictionary, ai_flags: Array, seed_value: int, names := {})
 	_close_modal()
 	game = SledGame.new()
 	game.setup(course, ai_flags, seed_value)
-	game.simultaneous = sim_variant and online.is_empty()
+	game.simultaneous = sim_variant if online.is_empty() else bool(online.get("sim", false))
 	for k in names:
 		for p in game.players:
 			if p.seat == int(k):
@@ -1709,6 +1724,21 @@ func _back_to_cards() -> void:
 ## La mossa scelta da una persona: nel gioco normale parte subito, nella variante simultanea
 ## resta in attesa finché tutti hanno programmato.
 func _submit_move(pend: Array, o: Dictionary) -> void:
+	if game.simultaneous and not online.is_empty() and not online.get("over", false):
+		var p = cur
+		var k := sim_racers.find(p)
+		pending = []
+		sel = -1
+		outs = []
+		board.destinations = []
+		phase = "simwait"
+		cur = null
+		_posting_prog = true
+		_refresh()
+		await _post_prog(sim_base + k, p, pend.duplicate(true), o)
+		_posting_prog = false
+		_refresh()
+		return
 	if game.simultaneous:
 		sim_progs[cur.id] = {"pend": pend.duplicate(true), "o": o}
 		pending = []
@@ -1801,6 +1831,9 @@ func _drive_cell(it: Dictionary, follow: bool) -> void:
 ## Un giro: tutti programmano (le CPU subito, le persone una alla volta), poi si muove insieme.
 func _sim_round() -> void:
 	var my := race_id
+	if not online.is_empty() and not online.get("over", false):
+		await _sim_round_online(my)
+		return
 	game.order = game.race_order()
 	sim_progs = {}
 	var humans := 0
@@ -1919,9 +1952,23 @@ func _sim_resolve(my: int) -> void:
 	_refresh()
 	for p in need:
 		cur = p
-		phase = "discard"
 		disc_buf = []
-		_refresh()
+		if online.is_empty() or online.get("over", false):
+			phase = "discard"
+			_refresh()
+		else:
+			var ctl := await _ctl(p)
+			if my != race_id:
+				return
+			if ctl == "me":
+				phase = "discard"
+				_refresh()
+			elif ctl == "cpu":
+				_do_act({"k": "disc", "v": game.ai_discard_values(p)})
+			else:
+				phase = "wait"
+				_refresh()
+				_wait_act("disc")
 		await sim_step
 		if my != race_id:
 			return
@@ -1932,6 +1979,179 @@ func _sim_resolve(my: int) -> void:
 		_show_results()
 	else:
 		_begin_round()
+
+# ---------- variante simultanea online (telefoni + schermo condiviso) ----------
+## Ogni slitta in gara ha il suo numero di mossa nel giro (sim_base + posizione): ognuno scrive la
+## propria programmazione, chi ha creato la stanza quella delle CPU e di chi non risponde.
+## Quando ci sono tutte, ogni dispositivo risolve il giro allo stesso modo.
+func _sim_round_online(my: int) -> void:
+	game.order = game.race_order()
+	sim_progs = {}
+	sim_racers = []
+	for p in game.order.duplicate():
+		if not game.racing(p):
+			continue
+		if p.hand.is_empty():
+			var c0: int = p.cell
+			game.add_dent(p, 1)
+			game.record(p, c0, [], [])
+			game.log_text = "[b]%s[/b] non ha carte cane: prende un'ammaccatura" % p.name
+			if p.wrecked:
+				continue
+			game.draw_up(p)
+		sim_racers.append(p)
+	sim_base = int(online["n"])
+	var code: String = online["code"]
+	var mine = null
+	for p in sim_racers:
+		if _is_mine(p):
+			mine = p
+	cur = null
+	phase = "simwait"
+	_refresh()
+	if online["role"] == "host":
+		for k in sim_racers.size():
+			var p = sim_racers[k]
+			if p.ai:
+				var ch := game.ai_choose(p)
+				await _post_prog(sim_base + k, p, ch["pend"], ch["o"])
+				if my != race_id:
+					return
+		_refresh()
+	if mine != null and not sim_progs.has(mine.id) and _backlog_at(sim_base + sim_racers.find(mine)).is_empty():
+		cur = mine
+		pending = []
+		sel = -1
+		outs = []
+		board.destinations = []
+		board.focus_cell(mine.cell)
+		phase = "cards"
+		_refresh()
+	var t0 := Time.get_ticks_msec()
+	var seen := {}
+	var polls := 0
+	while true:
+		if my != race_id or online.is_empty():
+			return
+		var missing := 0
+		for k in sim_racers.size():
+			var p = sim_racers[k]
+			if sim_progs.has(p.id):
+				continue
+			if p == mine and _posting_prog:
+				missing += 1
+				continue
+			var a := _backlog_at(sim_base + k)
+			if a.is_empty():
+				a = await net.get_act(code, sim_base + k)
+				if my != race_id or online.is_empty():
+					return
+			if sim_progs.has(p.id):
+				continue
+			if not a.is_empty() and not a.has("_err"):
+				sim_progs[p.id] = _prog_from_act(p, a)
+				if p == mine and phase in ["cards", "dest"]:
+					pending = []
+					sel = -1
+					outs = []
+					board.destinations = []
+					cur = null
+					phase = "simwait"
+					game.log_text = "Eri via: il computer ha programmato al tuo posto."
+				_refresh()
+				continue
+			missing += 1
+			# chi ha creato la stanza: se un giocatore tace troppo, programma il computer al suo posto
+			if online["role"] == "host" and not p.ai and p != mine and polls % 4 == 0:
+				if await _sim_away(p, t0, seen):
+					if my != race_id:
+						return
+					var ch := game.ai_choose(p)
+					await _post_prog(sim_base + k, p, ch["pend"], ch["o"])
+					if my != race_id:
+						return
+					_refresh()
+		if missing == 0:
+			break
+		if online.get("catchup", false) and sim_base + sim_racers.size() > (online.get("backlog", []) as Array).size():
+			online["catchup"] = false
+			_refresh()
+		polls += 1
+		await _pause(1.2)
+	online["n"] = sim_base + sim_racers.size()
+	if online.get("catchup", false) and int(online["n"]) >= (online.get("backlog", []) as Array).size():
+		online["catchup"] = false
+	cur = null
+	await _sim_resolve(my)
+
+## Una mossa già registrata (per chi rientra in una gara), oppure {}.
+func _backlog_at(n: int) -> Dictionary:
+	var bl: Array = online.get("backlog", [])
+	return bl[n] if n < bl.size() and bl[n] is Dictionary else {}
+
+## Pubblica la programmazione di p al numero idx; se c'è già (scritta da altri), vale quella.
+func _post_prog(idx: int, p, pend: Array, o: Dictionary) -> void:
+	var my := race_id
+	var a := _move_act(pend, o)
+	a["k"] = "prog"
+	a["s"] = p.seat
+	while true:
+		var ok := await net.post_act(online["code"], idx, a)
+		if my != race_id or online.is_empty():
+			return
+		if ok:
+			sim_progs[p.id] = {"pend": pend, "o": o}
+			return
+		var ex := await net.get_act(online["code"], idx)
+		if my != race_id or online.is_empty():
+			return
+		if not ex.is_empty() and not ex.has("_err"):
+			sim_progs[p.id] = _prog_from_act(p, ex)
+			return
+		game.log_text = "Rete non raggiungibile, riprovo… (%s)" % net.last_error
+		_refresh()
+		await get_tree().create_timer(2.0).timeout
+		if my != race_id or online.is_empty():
+			return
+
+## Dalla mossa registrata alla programmazione: carte e casella d'arrivo (ricalcolate sulle posizioni di inizio giro).
+func _prog_from_act(p, a: Dictionary) -> Dictionary:
+	var pend := []
+	var cs: Array = a.get("c", [])
+	var sl: Array = a.get("sl", [])
+	for i in cs.size():
+		pend.append({"v": int(cs[i]), "slot": String(sl[i])})
+	var cands := game.compute_outs(p, game.mat_after(p, pend))
+	if cands.is_empty():
+		return {"pend": [], "o": {"end": p.cell, "path": [], "n": 0, "sap": [], "half": false, "crash": "", "dents": 0, "bonus": false}}
+	var o: Dictionary = cands[0]
+	for c in cands:
+		if int(c["end"]) == int(a.get("e", -1)):
+			o = c
+			break
+	return {"pend": pend, "o": o}
+
+## Chi ha creato la stanza controlla se p è ancora collegato (un minuto di silenzio = assente).
+func _sim_away(p, t0: int, seen: Dictionary) -> bool:
+	if (online["away"] as Dictionary).has(p.seat):
+		var st0 := await net.seat(online["code"], p.seat)
+		if not st0.is_empty() and not st0.get("away", false):
+			online["away"].erase(p.seat)
+			return false
+		return true
+	var st := await net.seat(online["code"], p.seat)
+	if st.is_empty():
+		return false
+	var now := Time.get_ticks_msec()
+	var sv = st.get("seen", null)
+	if not seen.has(p.seat) or seen[p.seat][0] != sv:
+		seen[p.seat] = [sv, now]
+	if st.get("away", false) or (now - int(seen[p.seat][1]) > 45000 and now - t0 > 60000):
+		await net.set_away(online["code"], p.seat, true)
+		online["away"][p.seat] = true
+		game.log_text = "[b]%s[/b] non risponde: per ora guida il computer." % p.name
+		return true
+	return false
 
 # ======================= RENDER =======================
 func _refresh() -> void:
@@ -2163,6 +2383,11 @@ func _action_text() -> String:
 				return t
 		"posting":
 			return "Invio la mossa…"
+		"simwait":
+			if not online.is_empty():
+				if _posting_prog:
+					return "Invio la tua mossa…"
+				return "Si aspettano le mosse di tutti: quando ognuno ha programmato, le slitte partono insieme."
 		"replay":
 			return "Replay: le slitte si muovono insieme."
 	return ""
@@ -2198,6 +2423,14 @@ func _render_bottom() -> void:
 			b.pressed.connect(_show_results)
 			bottom_box.add_child(b)
 			return
+	if phase == "simwait" and not online.is_empty():
+		bottom_box.add_child(_sim_ready_row())
+		for q in game.players:
+			if _is_mine(q) and not q.wrecked:
+				bottom_box.add_child(UIKit.label("La tua mano", 15, UIKit.MUTED))
+				bottom_box.add_child(_hand(q, false, true))
+				break
+		return
 	if cur == null:
 		return
 	if cur.wrecked:
@@ -2243,6 +2476,21 @@ func _render_bottom() -> void:
 		b3.add_theme_font_size_override("font_size", 17)
 		b3.pressed.connect(_back_to_cards)
 		bottom_box.add_child(b3)
+
+## Chi ha già programmato la mossa (✓) e chi no, senza svelare niente.
+func _sim_ready_row() -> HFlowContainer:
+	var fl := HFlowContainer.new()
+	fl.add_theme_constant_override("h_separation", 8)
+	fl.add_theme_constant_override("v_separation", 6)
+	for p in sim_racers:
+		var ok: bool = sim_progs.has(p.id)
+		var pc := PanelContainer.new()
+		pc.add_theme_stylebox_override("panel", UIKit.box(Color(p.color, 0.18) if ok else UIKit.SOFT, 10, p.color, 2, 8))
+		var l := UIKit.label(("✓ " if ok else "… ") + p.name, 20, UIKit.INK if ok else UIKit.MUTED)
+		l.autowrap_mode = TextServer.AUTOWRAP_OFF
+		pc.add_child(l)
+		fl.add_child(pc)
+	return fl
 
 func _hint(t: String) -> RichTextLabel:
 	var r := UIKit.rich(21)
@@ -2565,8 +2813,11 @@ func _online_box() -> VBoxContainer:
 	_on_name.text = str(ses.get("name", ""))
 	v.add_child(_on_name)
 	var bc := UIKit.button("Crea una stanza")
-	bc.pressed.connect(_online_create)
+	bc.pressed.connect(_online_create.bind(false))
 	v.add_child(bc)
+	var bt := UIKit.button("Schermo condiviso: si gioca col telefono")
+	bt.pressed.connect(_online_create.bind(true))
+	v.add_child(bt)
 	var row := HBoxContainer.new()
 	row.add_theme_constant_override("separation", 8)
 	_on_code = _line_edit("codice", 4)
@@ -2580,7 +2831,7 @@ func _online_box() -> VBoxContainer:
 	bj.pressed.connect(_online_join)
 	row.add_child(bj)
 	v.add_child(row)
-	_on_lbl = UIKit.label("Chi crea la stanza sceglie percorso e slitte: le slitte su «Persona» diventano i posti per gli amici, che entrano con il codice. I posti rimasti liberi li guida la CPU.", 17, UIKit.MUTED)
+	_on_lbl = UIKit.label("Le slitte su «Persona» sono i posti per gli amici, che entrano col codice (i posti liberi li guida la CPU). Con «Schermo condiviso» qui si vede solo la gara e tutti giocano dal telefono.", 17, UIKit.MUTED)
 	v.add_child(_on_lbl)
 	if not online.is_empty() and online.get("lobby", false):
 		_on_code.text = online["code"]
@@ -2635,29 +2886,175 @@ func _seats_text(room: Dictionary) -> String:
 		parts.append("%s: %s" % [SledGame.NAMES[int(idx)], who])
 	return ", ".join(parts)
 
-func _online_create() -> void:
+## table: questo schermo non gioca, mostra la pista; le persone giocano dal proprio telefono.
+func _online_create(table := false) -> void:
+	if _is_tour():
+		_on_text("Il Gran Tour è solo per le partite su questo dispositivo: scegli una pista singola.")
+		return
 	var nm := _player_name()
-	if nm == "":
+	if nm == "" and not table:
 		_on_text("Scrivi il tuo nome.")
 		return
 	var seats := []
 	for i in setup_on.size():
 		if setup_on[i] and not setup_ai[i]:
 			seats.append(i)
-	if seats.size() < 2:
+	if table and seats.is_empty():
+		_on_text("Metti su «Persona» le slitte che guideranno i giocatori col telefono.")
+		return
+	if not table and seats.size() < 2:
 		_on_text("Metti su «Persona» almeno due slitte: la prima è la tua, le altre sono i posti per gli amici.")
 		return
 	_on_text("Creo la stanza…")
-	var code := await _net().create_room(nm, seats)
+	var code := await _net().create_room(nm if nm != "" else "Schermo", seats, table)
 	if code == "":
 		_on_text("Non riesco a creare la stanza.\n%s" % net.last_error)
 		return
-	online = {"role": "host", "code": code, "seat": seats[0], "n": 0, "away": {}, "lobby": true}
-	net.remember_room(code, seats[0])
-	net._save({"name": nm})
+	var seat: int = -1 if table else seats[0]
+	online = {"role": "host", "code": code, "seat": seat, "table": table, "n": 0, "away": {}, "lobby": true}
+	net.remember_room(code, seat)
+	if nm != "":
+		net._save({"name": nm})
 	if is_instance_valid(_on_code):
 		_on_code.text = code
-	_online_lobby_poll(code)
+	if table:
+		_table_lobby(code)
+	else:
+		_online_lobby_poll(code)
+
+## Indirizzo del gioco con il codice della stanza: il telefono che lo apre entra direttamente.
+func _join_url(code: String) -> String:
+	var base := "https://tannoiser2.github.io/SnowTails/"
+	if OS.has_feature("web"):
+		var b = JavaScriptBridge.eval("location.origin + location.pathname")
+		if b != null and str(b).begins_with("http"):
+			base = str(b)
+	return base + "?r=" + code
+
+## Schermo condiviso in attesa dei giocatori: codice grande, QR e posti.
+func _table_lobby(code: String) -> void:
+	var land := _is_landscape()
+	var root_box: BoxContainer = HBoxContainer.new() if land else VBoxContainer.new()
+	root_box.add_theme_constant_override("separation", 30)
+	var left := VBoxContainer.new()
+	left.add_theme_constant_override("separation", 12)
+	left.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	left.add_child(UIKit.title("Snow Tails", 50))
+	left.add_child(UIKit.label("Inquadra il codice col telefono, oppure apri", 19, UIKit.MUTED))
+	var url := _join_url(code)
+	var ul := UIKit.label(url.replace("https://", ""), 19, UIKit.ACCENT_DARK)
+	left.add_child(ul)
+	left.add_child(UIKit.label("e scrivi il codice della stanza:", 19, UIKit.MUTED))
+	var cl := UIKit.title(code, 92)
+	left.add_child(cl)
+	var seats_box := VBoxContainer.new()
+	seats_box.add_theme_constant_override("separation", 6)
+	left.add_child(UIKit.heading("Giocatori"))
+	left.add_child(seats_box)
+	var info := UIKit.label("Le slitte senza giocatore le guida la CPU. Movimento: %s." % ("simultaneo" if sim_variant else "a turni"), 17, UIKit.MUTED)
+	left.add_child(info)
+	var acts := HBoxContainer.new()
+	acts.add_theme_constant_override("separation", 10)
+	var bx := UIKit.button("Annulla")
+	bx.pressed.connect(func():
+		online = {}
+		net.remember_room("")
+		show_menu())
+	acts.add_child(bx)
+	var bs := UIKit.cta("Inizia la gara")
+	bs.pressed.connect(_online_start)
+	acts.add_child(bs)
+	left.add_child(acts)
+	root_box.add_child(left)
+	var q := QR.make(url)
+	if q != null:
+		var tr := TextureRect.new()
+		tr.texture = ImageTexture.create_from_image(q.image(10))
+		tr.expand_mode = TextureRect.EXPAND_IGNORE_SIZE
+		tr.stretch_mode = TextureRect.STRETCH_KEEP_ASPECT_CENTERED
+		tr.custom_minimum_size = Vector2(380, 380)
+		tr.texture_filter = CanvasItem.TEXTURE_FILTER_NEAREST
+		var cc := CenterContainer.new()
+		cc.add_child(tr)
+		root_box.add_child(cc)
+	_modal(root_box, 1100 if land else 700, true)
+	_on_lbl = info
+	while online.get("code", "") == code and online.get("lobby", false):
+		var room := await net.room(code)
+		if online.get("code", "") != code or not online.get("lobby", false) or not is_instance_valid(seats_box):
+			return
+		UIKit.clear(seats_box)
+		var st := Net._as_dict(room.get("seats", {}))
+		for idx in room.get("open", []):
+			var i := int(idx)
+			var r := HBoxContainer.new()
+			r.add_theme_constant_override("separation", 10)
+			var dot := ColorRect.new()
+			dot.color = SledGame.COLORS[i]
+			dot.custom_minimum_size = Vector2(22, 22)
+			dot.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			r.add_child(dot)
+			var k := str(i)
+			var who := str(st[k].get("name", "?")) if st.has(k) and st[k] is Dictionary else "libero (CPU)"
+			var wl := UIKit.label("%s: %s" % [SledGame.NAMES[i], who], 22, UIKit.INK if st.has(k) else UIKit.MUTED)
+			wl.autowrap_mode = TextServer.AUTOWRAP_OFF
+			r.add_child(wl)
+			seats_box.add_child(r)
+		await get_tree().create_timer(2.0).timeout
+
+## Telefono aperto dal QR (?r=CODICE): nome, colore e via, senza il menu completo.
+func _phone_join(code: String) -> void:
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 14)
+	vb.add_child(UIKit.title("Snow Tails", 50))
+	vb.add_child(UIKit.label("Stanza %s" % code, 26, UIKit.INK))
+	var ses := _net().load_session()
+	_on_name = _line_edit("il tuo nome", 20)
+	_on_name.text = str(ses.get("name", ""))
+	vb.add_child(_on_name)
+	_on_code = LineEdit.new()
+	_on_code.text = code
+	_on_code.visible = false
+	vb.add_child(_on_code)
+	vb.add_child(UIKit.label("Scegli la slitta:", 19, UIKit.MUTED))
+	var colors := VBoxContainer.new()
+	colors.add_theme_constant_override("separation", 8)
+	vb.add_child(colors)
+	_on_lbl = UIKit.label("Cerco la stanza…", 18, UIKit.MUTED)
+	vb.add_child(_on_lbl)
+	var bm := UIKit.button("Vai al menu")
+	bm.pressed.connect(func():
+		online = {}
+		show_menu())
+	vb.add_child(bm)
+	_modal(vb, 560, true)
+	if not await net.sign_in():
+		_on_text("Rete non raggiungibile: %s" % net.last_error)
+		return
+	var room := await net.room(code)
+	if room.is_empty():
+		_on_text("La stanza %s non esiste (o è chiusa)." % code)
+		return
+	var st := Net._as_dict(room.get("seats", {}))
+	for k in st:
+		if st[k] is Dictionary and st[k].get("uid", "") == net.uid:
+			_on_text("Rientro nella stanza…")
+			_online_join()
+			return
+	var any := false
+	for idx in room.get("open", []):
+		var i := int(idx)
+		if st.has(str(i)):
+			continue
+		any = true
+		var b := UIKit.button(SledGame.NAMES[i])
+		b.custom_minimum_size = Vector2(0, 60)
+		UIKit.style_button(b, SledGame.COLORS[i], Color.WHITE, SledGame.COLORS[i].darkened(0.3), 2, 14, 4)
+		b.pressed.connect(func():
+			_join_want = i
+			_online_join())
+		colors.add_child(b)
+	_on_text("" if any else ("La gara è già partita." if room.get("status", "") != "lobby" else "Non ci sono slitte libere."))
 
 func _online_join() -> void:
 	var code := _on_code.text.strip_edges().to_upper() if is_instance_valid(_on_code) else ""
@@ -2665,8 +3062,20 @@ func _online_join() -> void:
 	if nm == "" or code.length() != 4:
 		_on_text("Scrivi il tuo nome e il codice di 4 lettere.")
 		return
+	if not online.is_empty() and online.get("code", "") == code:
+		return
 	_on_text("Entro nella stanza %s…" % code)
-	var seat := await _net().join_room(code, nm)
+	var seat := await _net().join_room(code, nm, _join_want)
+	if seat == -3:
+		# lo schermo condiviso che aveva creato la stanza la riapre
+		var rm: Dictionary = net.last_room
+		online = {"role": "host", "code": code, "seat": -1, "table": true, "n": 0, "away": {}, "lobby": true}
+		net.remember_room(code, -1)
+		if rm.get("status", "") == "playing" and rm.has("game"):
+			_online_begin(rm["game"], true)
+		else:
+			_table_lobby(code)
+		return
 	if seat == -2:
 		_on_text("Stanza %s non trovata, oppure la gara è già partita.%s" % [code, ("\n" + net.last_error) if net.last_error != "" else ""])
 		return
@@ -2714,7 +3123,7 @@ func _online_start() -> void:
 		online = {}
 		return
 	var seats := Net._as_dict(room.get("seats", {}))
-	if not setup_on[int(online["seat"])] or not seats.has(str(int(online["seat"]))):
+	if not online.get("table", false) and (not setup_on[int(online["seat"])] or not seats.has(str(int(online["seat"])))):
 		_on_text("Hai cambiato le slitte dopo aver creato la stanza: creane una nuova.")
 		return
 	var ai := []
@@ -2728,7 +3137,7 @@ func _online_start() -> void:
 			names[k] = str(seats[k].get("name", ""))
 		else:
 			ai.append(1)
-	var g := {"seed": 1 + randi() % 2000000000, "def": JSON.stringify(def), "ai": ai, "names": names}
+	var g := {"seed": 1 + randi() % 2000000000, "def": JSON.stringify(def), "ai": ai, "names": names, "sim": sim_variant}
 	if not await net.start_room(code, g):
 		_on_text("Non riesco ad avviare la gara (%s)." % net.last_error)
 		return
@@ -2740,10 +3149,12 @@ func _online_begin(g: Dictionary, rejoin: bool) -> void:
 	online["n"] = 0
 	online["away"] = {}
 	online["over"] = false
+	online["sim"] = bool(g.get("sim", false))
 	var backlog: Array = []
 	if rejoin:
 		backlog = await net.get_acts(online["code"])
-		net.set_away(online["code"], int(online["seat"]), false)
+		if int(online["seat"]) >= 0:
+			net.set_away(online["code"], int(online["seat"]), false)
 	online["backlog"] = backlog
 	online["catchup"] = not backlog.is_empty()
 	var def = JSON.parse_string(str(g.get("def", ""))) if g.get("def") is String else g.get("def", {})
@@ -2752,5 +3163,5 @@ func _online_begin(g: Dictionary, rejoin: bool) -> void:
 		ai.append(x if x is bool else int(x))
 	var names: Dictionary = g.get("names", {}) if g.get("names") is Dictionary else Net._as_dict(g.get("names", {}))
 	_begin_race(def if def is Dictionary else {}, ai, int(g.get("seed", 1)), names)
-	if online["role"] != "host":
+	if online["role"] != "host" and int(online["seat"]) >= 0:
 		_heartbeat(race_id)
