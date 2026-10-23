@@ -75,7 +75,9 @@ func _process(_d: float) -> void:
 	if cw <= 0.0 or bw <= 0.0:
 		return
 	var k := bw / cw
-	var xf := _le.get_screen_transform()
+	# dalle coordinate del gioco ai pixel della tela: comprende l'ingrandimento dell'interfaccia
+	# (content scale), che get_screen_transform() non conta
+	var xf := _le.get_viewport().get_final_transform() * _le.get_global_transform_with_canvas()
 	var pos := xf.origin
 	var sz := _le.size * xf.get_scale()
 	_el.style.display = "block"
