@@ -40,6 +40,7 @@
             }
             if (window.snowtailsInput && window.snowtailsInput.controls.some(function (c) { return c.text === 'Regole'; })) {
                 log('MENU PRONTO. Ora provare Regole.');
+                panel.style.display = 'none';
                 clearInterval(timer);
             }
         }, 2000);

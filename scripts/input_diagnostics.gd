@@ -14,15 +14,35 @@ func _ready() -> void:
 	if (window.snowtailsStartup) window.snowtailsStartup("Godot avviato; costruzione del menu.");
 	window.snowtailsInput = {events: [], controls: [], log: function(s) {
 	  this.events.push(s); if (this.events.length > 40) this.events.shift();
-	  document.getElementById('input-trace').textContent = this.events.slice(-12).join('\\n');
+	  document.getElementById('input-trace').textContent = this.events.slice(-8).join('\\n');
 	  console.log('[input] ' + s);
 	}};
 	var trace = document.createElement('pre'); trace.id = 'input-trace';
-	trace.style.cssText = 'position:fixed;bottom:0;left:0;z-index:100;pointer-events:none;background:#000c;color:white;font:14px monospace;max-width:100%;margin:0';
+	trace.style.cssText = 'position:fixed;bottom:0;left:0;z-index:100;pointer-events:none;background:#000c;color:white;font:14px monospace;width:100%;white-space:pre-wrap;overflow-wrap:anywhere;margin:0';
 	document.body.appendChild(trace);
+	var markers = {};
+	snowtailsInput.mark = function(kind, x, y) {
+	  if (!markers[kind]) {
+	    var dot = document.createElement('div');
+	    dot.textContent = kind === 'browser' ? 'B' : 'G';
+	    dot.style.cssText = 'position:fixed;z-index:102;pointer-events:none;width:20px;height:20px;border:2px solid;border-radius:50%;font:bold 16px monospace;text-align:center;transform:translate(-50%,-50%);';
+	    dot.style.color = kind === 'browser' ? '#00ffff' : '#ff4040';
+	    document.body.appendChild(dot); markers[kind] = dot;
+	  }
+	  markers[kind].style.left = x + 'px'; markers[kind].style.top = y + 'px';
+	};
+	snowtailsInput.godotPoint = function(x, y) {
+	  var c = document.getElementById('canvas'), r = c.getBoundingClientRect();
+	  var cx = r.left + x * r.width / c.width, cy = r.top + y * r.height / c.height;
+	  snowtailsInput.mark('godot', cx, cy);
+	  snowtailsInput.log('GODOT CSS=' + Math.round(cx) + ',' + Math.round(cy));
+	};
 	['pointerdown','pointerup','mousedown','mouseup','touchstart','touchend','click'].forEach(function(t) {
 	  document.addEventListener(t, function(e) {
-	    snowtailsInput.log('DOM ' + t + ' target=' + e.target.tagName + '#' + e.target.id + ' pointer=' + (e.pointerType || '') + ' button=' + e.button);
+	    var point = e.changedTouches ? e.changedTouches[0] : e;
+	    var coords = point ? Math.round(point.clientX) + ',' + Math.round(point.clientY) : '?';
+	    snowtailsInput.log('DOM ' + t + ' ' + e.target.tagName + ' CSS=' + coords + ' ' + (e.pointerType || ''));
+	    if (point) snowtailsInput.mark('browser', point.clientX, point.clientY);
 	  }, {capture:true, passive:true});
 	});
 	snowtailsInput.log('UA ' + navigator.userAgent + ' maxTouchPoints=' + navigator.maxTouchPoints);
@@ -37,17 +57,27 @@ func _visit(n: Node) -> void:
 		_visit(child)
 
 func _watch(n: Node) -> void:
-	if n is Control:
+	if n is Control and (n is BaseButton or n.mouse_filter == Control.MOUSE_FILTER_STOP):
 		n.gui_input.connect(func(ev):
 			if ev is InputEventMouseButton or ev is InputEventScreenTouch:
-				_log("GUI %s filter=%d %s" % [n.get_path(), n.mouse_filter, ev.as_text()]))
+				_log("GUI %s %s local=%s" % [_label(n), "DOWN" if ev.pressed else "UP", ev.position]))
 	if n is BaseButton:
-		n.pressed.connect(func(): _log("PRESSED %s" % n.get_path()))
+		n.pressed.connect(func(): _log("PRESSED %s" % _label(n)))
 
 func _input(ev: InputEvent) -> void:
 	if ev is InputEventMouseButton or ev is InputEventScreenTouch:
 		var hovered := get_viewport().gui_get_hovered_control()
-		_log("INPUT %s device=%d hover=%s" % [ev.as_text(), ev.device, str(hovered.get_path()) if hovered else "none"])
+		_log("INPUT %s %s dev=%d pos=%s hover=%s" % ["TOUCH" if ev is InputEventScreenTouch else "MOUSE", "DOWN" if ev.pressed else "UP", ev.device, ev.position, _label(hovered)])
+		if ev.pressed and ev.device != -1:
+			var pixel: Vector2 = get_viewport().get_final_transform() * ev.position
+			JavaScriptBridge.eval("window.snowtailsInput.godotPoint(%f,%f)" % [pixel.x, pixel.y], true)
+
+func _label(n: Control) -> String:
+	if n == null:
+		return "none"
+	if n is Button:
+		return "Button(%s) disabled=%s" % [n.text, n.disabled]
+	return n.get_class()
 
 func _log(s: String) -> void:
 	JavaScriptBridge.eval("window.snowtailsInput.log(%s)" % JSON.stringify(s), true)

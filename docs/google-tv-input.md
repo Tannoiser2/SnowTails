@@ -135,3 +135,18 @@ di avvio. Rimane osservabile anche se Godot non arriva a eseguire GDScript.
 Una barra piena indica download terminato, non necessariamente avvio completato.
 Fotografare il riquadro superiore se il menu non appare. L'export va eseguito
 con `tools/export_web.sh`, che copia anche lo script esterno nella build.
+
+## Lettura della prima traccia sulla TCL
+
+La build Release arriva al menu sulla TV. La foto mostra ScreenTouch con device 0
+ed eventi mouse emulati con device -1; il destinatario visibile è un pannello,
+non un Button. Non prova un blocco dei pulsanti: l'utente non riusciva a trovare
+Regole perché il riquadro di avvio lo copriva. Provare prima senza `input_debug`.
+Gli avvisi RGBAFloat → RGBAHalf non hanno impedito la comparsa del menu.
+
+Il riquadro di avvio ora scompare automaticamente quando il menu è pronto.
+La traccia input usa nomi brevi dei controlli, DOWN/UP e coordinate leggibili.
+In modalità diagnostica B (azzurro) marca il punto CSS ricevuto dal browser;
+G (rosso) marca il punto ricevuto da Godot, riconvertito in coordinate CSS.
+Se coincidono, i cerchi si sovrappongono. Un disallineamento documenta una
+differenza di coordinate da investigare, senza applicare correzioni arbitrarie.
