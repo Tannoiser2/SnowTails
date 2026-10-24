@@ -1,0 +1,59 @@
+<!doctype html>
+<html lang="it">
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SnowTails — prova mouse senza Godot</title>
+<style>
+body { margin:24px; background:#142333; color:white; font:22px sans-serif; }
+h1 { font-size:30px; } p { margin:12px 0; }
+.targets { display:flex; flex-wrap:wrap; gap:16px; }
+.target { width:280px; height:105px; border:3px solid white; border-radius:10px; box-sizing:border-box; }
+button { font:22px sans-serif; background:#e9bd58; color:#152333; }
+canvas { background:#357aa2; }
+#canvas-none { touch-action:none; }
+#status { font-weight:bold; color:#f8d368; min-height:28px; }
+pre { white-space:pre-wrap; overflow-wrap:anywhere; background:#07111c; padding:12px; font:16px monospace; }
+#device { font:14px monospace; }
+</style>
+<h1>Prova mouse — senza motore Godot</h1>
+<p>Con il mouse fisico, clicca prima il pulsante giallo e poi i due riquadri blu.
+Ripeti con il telecomando. Non occorre trascinare.</p>
+<div class="targets">
+<button id="html" class="target">PULSANTE HTML</button>
+<canvas id="canvas" class="target" width="560" height="210" tabindex="0" aria-label="Canvas normale"></canvas>
+<canvas id="canvas-none" class="target" width="560" height="210" tabindex="0" aria-label="Canvas touch-action none"></canvas>
+</div>
+<p id="status">Nessuna attivazione.</p>
+<div id="device"></div>
+<pre id="log">Attendo eventi dal browser.</pre>
+<script>
+(function () {
+    var lines = [], counts = {}, targets = ['html', 'canvas', 'canvas-none'];
+    var labels = ['CANVAS NORMALE', 'CANVAS COME GODOT'];
+    for (var i = 1; i < targets.length; i++) {
+        var ctx = document.getElementById(targets[i]).getContext('2d');
+        ctx.fillStyle = 'white'; ctx.font = '34px sans-serif';
+        ctx.textAlign = 'center'; ctx.fillText(labels[i-1], 280, 115);
+    }
+    document.getElementById('device').textContent = navigator.userAgent + ' | touch=' + navigator.maxTouchPoints;
+    function log(text) {
+        lines.push(text); if (lines.length > 12) lines.shift();
+        document.getElementById('log').textContent = lines.join('\n');
+    }
+    ['pointerdown', 'pointerup', 'mousedown', 'mouseup', 'touchstart', 'touchend', 'click'].forEach(function (type) {
+        document.addEventListener(type, function (e) {
+            var p = e.changedTouches ? e.changedTouches[0] : e;
+            log(type + ' target=' + (e.target.id || e.target.tagName) +
+                ' tipo=' + (e.pointerType || '-') + ' tasto=' + e.button +
+                ' CSS=' + (p ? Math.round(p.clientX) + ',' + Math.round(p.clientY) : '-'));
+            if (type === 'click' && targets.indexOf(e.target.id) !== -1) {
+                counts[e.target.id] = (counts[e.target.id] || 0) + 1;
+                document.getElementById('status').textContent = 'Attivazioni: HTML ' + (counts.html || 0) +
+                    ' | canvas ' + (counts.canvas || 0) + ' | canvas come Godot ' + (counts['canvas-none'] || 0);
+            }
+        }, {capture:true, passive:true});
+    });
+    window.inputProbeCounts = counts;
+})();
+</script>
+</html>

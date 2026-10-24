@@ -150,3 +150,16 @@ In modalità diagnostica B (azzurro) marca il punto CSS ricevuto dal browser;
 G (rosso) marca il punto ricevuto da Godot, riconvertito in coordinate CSS.
 Se coincidono, i cerchi si sovrappongono. Un disallineamento documenta una
 differenza di coordinate da investigare, senza applicare correzioni arbitrarie.
+
+## Confronto telecomando / mouse fisico
+
+Sulla TCL il telecomando ha aperto Regole: la foto mostra `PRESSED Button(Regole)`.
+Con il mouse fisico l'utente non osserva nuove righe nella traccia. Questo non
+prova un difetto di hit testing del gioco né identifica ancora chi scarti gli
+eventi: occorre un confronto senza il motore nella stessa pagina/browser.
+`input-probe.html` è indipendente da Godot. Contiene un Button HTML, un canvas 2D
+normale e un canvas con `touch-action:none` (la proprietà CSS usata dalla shell).
+Registra eventi DOM e conta le attivazioni, senza sintetizzare o consumare eventi.
+Cliccare i tre bersagli con il mouse fisico e fotografare il risultato prima di
+ripetere con il telecomando. Il file può essere copiato accanto a index.html
+senza riscaricare il gioco; aprire `/input-probe.html` sul medesimo tunnel HTTPS.
