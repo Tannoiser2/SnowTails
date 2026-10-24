@@ -38,9 +38,7 @@ jobs:
           "$GODOT" --headless --path . --editor --import
           "$GODOT" --headless --path . -s tests/fan_rules.gd | tee "$RUNNER_TEMP/rules.log"
           grep -q 'REGOLE FANMADE: 9/9' "$RUNNER_TEMP/rules.log"
-          mkdir -p build/web
-          "$GODOT" --headless --path . --export-debug Web build/web/index.html
-          cp docs/google-tv-input.md build/web/DIAGNOSTICA.md
+          tools/export_web.sh
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
@@ -59,6 +57,7 @@ jobs:
             if curl -fsS http://127.0.0.1:8060/index.html -o /dev/null; then break; fi
             sleep 1
           done
+          node tests/startup_trace.cjs
           node tests/input_web.cjs
       - uses: actions/upload-artifact@v4
         with:

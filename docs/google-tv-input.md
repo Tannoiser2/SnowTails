@@ -56,10 +56,13 @@ anomale molto ritardate richiedono verifica sul dispositivo reale.
 
 Esportare il preset Web con Godot **4.7-stable**, stessa versione della CI,
 con il template single-thread corrispondente. La build diagnostica è in
-`build/web/`; va servita via HTTP(S), non aperta come file locale.
+`build/web/`; richiede HTTPS quando viene aperta da un altro dispositivo (anche in LAN).
+HTTP funziona solo su localhost del computer che esegue il browser.
 Non usare il workflow Pages esistente per questa prova: pubblica il sito principale.
-Caricare la build in uno spazio di test separato o servirla su un computer
-raggiungibile dalla TV sulla stessa rete (`python3 -m http.server 8060 --directory build/web`).
+Caricare la build in uno spazio HTTPS di test separato. In alternativa, sul Mac:
+`python3 -m http.server 8060 --directory build/web` e, in un altro terminale,
+`cloudflared tunnel --url http://localhost:8060`. Aprire sulla TV il link
+HTTPS trycloudflare stampato, mantenendo entrambi i processi attivi.
 
 1. Aprire la pagina con `?input_debug=1&tv_click=0` (bridge disattivato).
 2. Cliccare «Regole» e annotare il trace in basso; il pannello è `pointer-events:none`.
@@ -85,7 +88,7 @@ Control visibili per ispezione dalla console del browser.
 ```sh
 godot --headless --path . --editor --import
 mkdir -p build/web
-godot --headless --path . --export-debug Web build/web/index.html
+GODOT=godot tools/export_web.sh
 python3 -m http.server 8060 --directory build/web
 # In un altro terminale, con Playwright disponibile:
 node tests/input_web.cjs
@@ -121,3 +124,14 @@ L'apertura automatica di una bozza PR è stata tentata: GitHub ha risposto
 `GitHub Actions is not permitted to create or approve pull requests`.
 Il job non autorizzato è stato rimosso; la build non dipende da quel permesso.
 Il confronto è disponibile in GitHub tra `main` e `diagnostic/google-tv-input`.
+
+## Diagnostica del blocco sulla barra piena
+
+La nuova esportazione usa Release, come il workflow Pages del sito originale.
+Non è una prova che Debug causi il blocco sulla TCL. Il nuovo script
+`web/startup_diagnostics.js` parte prima del motore: con `?input_debug=1`
+mostra in alto browser, secure context, errori JavaScript/WASM/WebGL e passaggi
+di avvio. Rimane osservabile anche se Godot non arriva a eseguire GDScript.
+Una barra piena indica download terminato, non necessariamente avvio completato.
+Fotografare il riquadro superiore se il menu non appare. L'export va eseguito
+con `tools/export_web.sh`, che copia anche lo script esterno nella build.

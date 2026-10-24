@@ -36,7 +36,7 @@ jobs:
         run: |
           mkdir -p build/web
           ./Godot_v4.7-stable_linux.x86_64 --headless --path . --import || true
-          ./Godot_v4.7-stable_linux.x86_64 --headless --path . --export-release "Web" build/web/index.html
+          GODOT=./Godot_v4.7-stable_linux.x86_64 tools/export_web.sh
           test -f build/web/index.pck
           touch build/web/.nojekyll
 

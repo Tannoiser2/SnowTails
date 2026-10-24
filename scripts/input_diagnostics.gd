@@ -11,6 +11,7 @@ func _ready() -> void:
 	if not enabled:
 		return
 	JavaScriptBridge.eval("""
+	if (window.snowtailsStartup) window.snowtailsStartup("Godot avviato; costruzione del menu.");
 	window.snowtailsInput = {events: [], controls: [], log: function(s) {
 	  this.events.push(s); if (this.events.length > 40) this.events.shift();
 	  document.getElementById('input-trace').textContent = this.events.slice(-12).join('\\n');
