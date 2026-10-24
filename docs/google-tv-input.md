@@ -3,13 +3,32 @@
 Ramo: `diagnostic/google-tv-input`, base `01c504b0afb301d0ef790b120eaec91a79b180de`.
 Nessuna modifica alle regole, ai dati di gioco o alla pubblicazione di `main`.
 
+## Esito della prova sulla TV — 24 ottobre 2026
+
+L'utente conferma che **Zeus Browser Internet**, sulla sua **TCL 75Q7C con
+Google TV**, permette di usare il mouse fisico sia nella pagina indipendente
+`input-probe.html` sia nel gioco della build diagnostica servita tramite HTTPS.
+La versione di Zeus e il modello/collegamento del mouse non sono stati rilevati.
+
+Nel browser TCL usato in precedenza il mouse non attivava neppure il pulsante
+HTML della pagina indipendente da Godot, mentre il telecomando apriva Regole
+nel gioco. Il confronto indica un problema nella gestione del mouse di quel
+browser/configurazione, non un blocco generale dei pulsanti o delle modali del
+gioco. Non identifica uno specifico difetto interno del browser.
+
+**Indicazione pratica:** usare Zeus Browser Internet su questa TV. La verifica
+sul sito originale `https://tannoiser2.github.io/SnowTails/` è stata proposta ma
+non ancora confermata dall'utente. Non attribuire il successo al bridge per i
+click isolati: quel caso è stato riprodotto in laboratorio, ma non dimostrato
+come causa del problema TCL. `main` e le regole di gioco restano invariati.
+
 ## Risultato e limiti
 
 Riprodotto in Chromium un caso concreto: un evento DOM `click` isolato sul
 pulsante «Regole» non produce `pressed` in Godot. Con il bridge di compatibilità
 produce una sola attivazione e apre realmente la finestra delle regole.
 Il test genera deliberatamente questo evento: **non dimostra che la TCL invii
-la stessa sequenza**. La causa sul televisore resta da confermare con il trace.
+la stessa sequenza**. Per l'esito delle prove sul televisore vedere sopra.
 Il fatto che il mouse funzioni nelle pagine web non prova che il browser invii
 anche la coppia `mousedown`/`mouseup` attesa dal canvas Godot.
 
@@ -112,7 +131,8 @@ funzionalità valida. La prova fisica sulla TCL non è eseguibile nell'ambiente 
   (quest'ultimo stampa due casi, non fornisce un totale di asserzioni).
 - HTTP 200 per HTML e WASM. Build locale in `build/web`, archivio
   `build/snowtails-google-tv-input.zip`.
-- TCL fisica, Firebase online e ripristino cloud in un nuovo task non verificati.
+- Prova fisica TCL riferita successivamente dall'utente: vedere l'esito sopra.
+  Firebase online e ripristino cloud in un nuovo task non verificati.
 
 ## Build remota del ramo
 
