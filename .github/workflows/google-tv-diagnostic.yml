@@ -1,0 +1,96 @@
+name: Google TV diagnostic build
+
+on:
+  push:
+    branches: [diagnostic/google-tv-input]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  web:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install verified Godot 4.7 and Web templates
+        shell: bash
+        run: |
+          set -euo pipefail
+          TOOLS="$RUNNER_TEMP/godot47"
+          mkdir -p "$TOOLS"
+          cd "$TOOLS"
+          BASE=https://github.com/godotengine/godot/releases/download/4.7-stable
+          for FILE in SHA512-SUMS.txt Godot_v4.7-stable_linux.x86_64.zip Godot_v4.7-stable_export_templates.tpz; do
+            curl -fLsS "$BASE/$FILE" -o "$FILE"
+          done
+          sha512sum --check --ignore-missing SHA512-SUMS.txt
+          unzip -q Godot_v4.7-stable_linux.x86_64.zip
+          T="$HOME/.local/share/godot/export_templates/4.7.stable"
+          mkdir -p "$T"
+          unzip -qj Godot_v4.7-stable_export_templates.tpz templates/web_nothreads_debug.zip templates/web_nothreads_release.zip -d "$T"
+          echo "GODOT=$TOOLS/Godot_v4.7-stable_linux.x86_64" >> "$GITHUB_ENV"
+      - name: Import, verify rules and export HTML5
+        shell: bash
+        run: |
+          set -euo pipefail
+          "$GODOT" --headless --path . --editor --import
+          "$GODOT" --headless --path . -s tests/fan_rules.gd | tee "$RUNNER_TEMP/rules.log"
+          grep -q 'REGOLE FANMADE: 9/9' "$RUNNER_TEMP/rules.log"
+          mkdir -p build/web
+          "$GODOT" --headless --path . --export-debug Web build/web/index.html
+          cp docs/google-tv-input.md build/web/DIAGNOSTICA.md
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+      - name: Test browser input
+        shell: bash
+        run: |
+          set -euo pipefail
+          npm install --prefix "$RUNNER_TEMP/browser-tests" --no-audit --no-fund playwright@1.57.0
+          export NODE_PATH="$RUNNER_TEMP/browser-tests/node_modules"
+          "$RUNNER_TEMP/browser-tests/node_modules/.bin/playwright" install --with-deps chromium
+          export CHROMIUM="$(node -p 'require("playwright").chromium.executablePath()')"
+          python3 -m http.server 8060 --bind 127.0.0.1 --directory build/web > "$RUNNER_TEMP/web-server.log" 2>&1 &
+          SERVER_PID=$!
+          trap 'kill "$SERVER_PID"' EXIT
+          for ATTEMPT in {1..30}; do
+            if curl -fsS http://127.0.0.1:8060/index.html -o /dev/null; then break; fi
+            sleep 1
+          done
+          node tests/input_web.cjs
+      - uses: actions/upload-artifact@v4
+        with:
+          name: snowtails-google-tv-html5
+          path: build/web/
+          if-no-files-found: error
+          retention-days: 30
+
+  prepare-review:
+    if: github.ref == 'refs/heads/diagnostic/google-tv-input'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: write
+    steps:
+      - uses: actions/checkout@v4
+      - name: Open draft PR without merging or deploying
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          EXISTING=$(gh pr list --head diagnostic/google-tv-input --base main --state open --json url --jq '.[0].url // empty')
+          if [ -n "$EXISTING" ]; then
+            echo "$EXISTING"
+            exit 0
+          fi
+          cat > "$RUNNER_TEMP/pr-body.md" <<'BODY'
+          Browser activations that emit only `click` never reach Godot's mouse-button handlers. Add a canvas-only compatibility bridge for that sequence, with duplicate suppression for normal mouse/touch input and opt-in DOM/Godot/GUI tracing (`?input_debug=1`).
+
+          Game rules and the production Pages deployment are unchanged. Disable the bridge with `tv_click=0` for an A/B comparison. The actual TCL 75Q7C event sequence still needs on-device confirmation; this PR does not claim the physical TV is fixed.
+
+          Validation: Godot 4.7 HTML5 export, six Chromium input scenarios and 9/9 fan-rule checks passed locally. This workflow repeats the checks and provides the separate `snowtails-google-tv-html5` artifact. See `docs/google-tv-input.md` for audit findings and the TV test procedure.
+          BODY
+          gh pr create --draft --base main --head diagnostic/google-tv-input --title "Diagnose Google TV input and handle click-only web activation" --body-file "$RUNNER_TEMP/pr-body.md"
