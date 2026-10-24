@@ -93,4 +93,9 @@ jobs:
 
           Validation: Godot 4.7 HTML5 export, six Chromium input scenarios and 9/9 fan-rule checks passed locally. This workflow repeats the checks and provides the separate `snowtails-google-tv-html5` artifact. See `docs/google-tv-input.md` for audit findings and the TV test procedure.
           BODY
-          gh pr create --draft --base main --head diagnostic/google-tv-input --title "Diagnose Google TV input and handle click-only web activation" --body-file "$RUNNER_TEMP/pr-body.md"
+          if ! gh pr create --draft --base main --head diagnostic/google-tv-input --title "Diagnose Google TV input and handle click-only web activation" --body-file "$RUNNER_TEMP/pr-body.md" > "$RUNNER_TEMP/pr-result.txt" 2>&1; then
+            cat "$RUNNER_TEMP/pr-result.txt"
+            echo "::error::$(tail -n 1 "$RUNNER_TEMP/pr-result.txt")"
+            exit 1
+          fi
+          cat "$RUNNER_TEMP/pr-result.txt"
