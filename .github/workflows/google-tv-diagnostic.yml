@@ -10,7 +10,7 @@ permissions:
 
 jobs:
   web:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
@@ -66,36 +66,3 @@ jobs:
           path: build/web/
           if-no-files-found: error
           retention-days: 30
-
-  prepare-review:
-    if: github.ref == 'refs/heads/diagnostic/google-tv-input'
-    runs-on: ubuntu-latest
-    permissions:
-      contents: read
-      pull-requests: write
-    steps:
-      - uses: actions/checkout@v4
-      - name: Open draft PR without merging or deploying
-        env:
-          GH_TOKEN: ${{ github.token }}
-        shell: bash
-        run: |
-          set -euo pipefail
-          EXISTING=$(gh pr list --head diagnostic/google-tv-input --base main --state open --json url --jq '.[0].url // empty')
-          if [ -n "$EXISTING" ]; then
-            echo "$EXISTING"
-            exit 0
-          fi
-          cat > "$RUNNER_TEMP/pr-body.md" <<'BODY'
-          Browser activations that emit only `click` never reach Godot's mouse-button handlers. Add a canvas-only compatibility bridge for that sequence, with duplicate suppression for normal mouse/touch input and opt-in DOM/Godot/GUI tracing (`?input_debug=1`).
-
-          Game rules and the production Pages deployment are unchanged. Disable the bridge with `tv_click=0` for an A/B comparison. The actual TCL 75Q7C event sequence still needs on-device confirmation; this PR does not claim the physical TV is fixed.
-
-          Validation: Godot 4.7 HTML5 export, six Chromium input scenarios and 9/9 fan-rule checks passed locally. This workflow repeats the checks and provides the separate `snowtails-google-tv-html5` artifact. See `docs/google-tv-input.md` for audit findings and the TV test procedure.
-          BODY
-          if ! gh pr create --draft --base main --head diagnostic/google-tv-input --title "Diagnose Google TV input and handle click-only web activation" --body-file "$RUNNER_TEMP/pr-body.md" > "$RUNNER_TEMP/pr-result.txt" 2>&1; then
-            cat "$RUNNER_TEMP/pr-result.txt"
-            echo "::error::$(tail -n 1 "$RUNNER_TEMP/pr-result.txt")"
-            exit 1
-          fi
-          cat "$RUNNER_TEMP/pr-result.txt"

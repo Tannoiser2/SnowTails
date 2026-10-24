@@ -110,3 +110,14 @@ funzionalità valida. La prova fisica sulla TCL non è eseguibile nell'ambiente 
 - HTTP 200 per HTML e WASM. Build locale in `build/web`, archivio
   `build/snowtails-google-tv-input.zip`.
 - TCL fisica, Firebase online e ripristino cloud in un nuovo task non verificati.
+
+## Build remota del ramo
+
+Il workflow `.github/workflows/google-tv-diagnostic.yml` ripete esportazione e
+verifiche, poi carica `snowtails-google-tv-html5` come artifact Actions (30 giorni).
+Non effettua deploy Pages e non modifica `main`.
+
+L'apertura automatica di una bozza PR è stata tentata: GitHub ha risposto
+`GitHub Actions is not permitted to create or approve pull requests`.
+Il job non autorizzato è stato rimosso; la build non dipende da quel permesso.
+Il confronto è disponibile in GitHub tra `main` e `diagnostic/google-tv-input`.
