@@ -21,6 +21,11 @@ boot_splash/bg_color=Color(0.1, 0.16, 0.24, 1)
 boot_splash/image="res://assets/ui/cover.png"
 config/icon="res://assets/icon/icona.png"
 
+[autoload]
+
+InputDiagnostics="*res://scripts/input_diagnostics.gd"
+WebInputCompat="*res://scripts/web_input_compat.gd"
+
 [display]
 
 window/size/viewport_width=720
