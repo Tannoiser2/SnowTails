@@ -81,6 +81,60 @@ static func incorporate(id: String) -> String:
 	reset_face(id)
 	return ""
 
+## Tutte le correzioni salvate su questo dispositivo, in un solo file da mandare (per incorporarle
+## nel progetto quando il gioco non gira dall'editor: web, iPad, app esportata).
+## Restituisce dove è finito il file, oppure "" se non ci sono correzioni.
+static func export_corrections() -> String:
+	var bundle := {"snowtails_corrections": 1, "saved_at": Time.get_datetime_string_from_system(), "faces": {}}
+	var da := DirAccess.open(USER_DIR)
+	if da == null:
+		return ""
+	for f in da.get_files():
+		if f.ends_with(".json"):
+			var d := _read(USER_DIR + f)
+			if not d.is_empty() and d.has("cells"):
+				bundle["faces"][f.get_basename()] = d
+	if (bundle["faces"] as Dictionary).is_empty():
+		return ""
+	var txt := JSON.stringify(bundle, " ")
+	var name := "snowtails_correzioni.json"
+	if OS.has_feature("web"):
+		JavaScriptBridge.download_buffer(txt.to_utf8_buffer(), name, "application/json")
+		return "Download: " + name
+	var dir := OS.get_system_dir(OS.SYSTEM_DIR_DOWNLOADS)
+	if dir == "" or not DirAccess.dir_exists_absolute(dir):
+		dir = OS.get_system_dir(OS.SYSTEM_DIR_DESKTOP)
+	if dir == "" or not DirAccess.dir_exists_absolute(dir):
+		dir = ProjectSettings.globalize_path("user://")
+	var path := dir.path_join(name)
+	var fa := FileAccess.open(path, FileAccess.WRITE)
+	if fa == null:
+		return ""
+	fa.store_string(txt)
+	fa.close()
+	return path
+
+## Incorpora nel progetto le correzioni di un file esportato (dall'editor o da riga di comando).
+static func import_corrections(path: String) -> Array:
+	var b := _read(path)
+	var done := []
+	for id in (b.get("faces", {}) as Dictionary):
+		var base := _read(RES_DIR + String(id) + ".json")
+		if base.is_empty():
+			continue
+		var d := _apply_override(normalize(base), normalize(b["faces"][id]))
+		for k in ["user_edited", "user_saved_at", "doubts", "lanes"]:
+			d.erase(k)
+		d["auto"] = false
+		d["verified"] = true
+		var f := FileAccess.open(RES_DIR + String(id) + ".json", FileAccess.WRITE)
+		if f == null:
+			continue
+		f.store_string(JSON.stringify(d, " "))
+		f.close()
+		done.append(id)
+	return done
+
 static func user_dir_global() -> String:
 	if not DirAccess.dir_exists_absolute(USER_DIR):
 		DirAccess.make_dir_recursive_absolute(USER_DIR)

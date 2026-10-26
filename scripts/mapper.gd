@@ -277,6 +277,14 @@ func _incorporate() -> void:
 	if dirty:
 		_save()
 	var id := String(face["id"])
+	if not OS.has_feature("editor"):
+		# fuori dall'editor il progetto non si può scrivere: si esportano le correzioni in un file
+		var where := FaceDB.export_corrections()
+		if where == "":
+			_refresh("[color=#c93636]Non ci sono correzioni salvate da esportare.[/color]")
+		else:
+			_refresh("Le correzioni sono salvate e valgono già in tutte le partite su questo dispositivo.\nPer metterle nel progetto (e su tutti i dispositivi) ho preparato il file «snowtails_correzioni.json» (%s): mandalo a Claude." % where)
+		return
 	var err := FaceDB.incorporate(id)
 	var idx := ids.find(id)
 	_load(idx)

@@ -118,7 +118,6 @@ func build(def: Dictionary) -> bool:
 	for pi in range(1, pieces.size()):
 		_join(pi - 1, pi)
 	_compute_drifts()
-	_apply_drift_edits()
 	_compute_progress()
 	_compute_dist_to_finish()
 	# limiti e traguardo
@@ -507,6 +506,9 @@ static func heading_of(p: Vector2, fwd_pos: Array, bwd_pos: Array, fallback: Vec
 		v = fallback
 	return v.normalized()
 
+## Derive: dentro una tessera valgono quelle della faccia, esattamente come le mostra l'editor
+## (direzioni e misure della sola faccia, più le correzioni a mano); fra una tessera e l'altra
+## si calcolano sul percorso montato.
 func _compute_drifts() -> void:
 	var pos := []
 	var fwd := []
@@ -517,26 +519,60 @@ func _compute_drifts() -> void:
 		heads.append(heading(c["id"]))
 	var res := Course.drift_targets(pos, fwd, heads, cell_len, lane_w)
 	for i in cells.size():
-		cells[i]["dl"] = res[0][i]
-		cells[i]["dr"] = res[1][i]
-
-## Modifiche manuali alle derive fatte nell'editor: [da, a, "L"|"R"] in indici della faccia.
-func _apply_drift_edits() -> void:
+		var pi: int = cells[i]["piece"]
+		var keep := func(t): return int(cells[t]["piece"]) != pi
+		cells[i]["dl"] = (res[0][i] as Array).filter(keep)
+		cells[i]["dr"] = (res[1][i] as Array).filter(keep)
 	for pc in pieces:
-		var f: Dictionary = pc["face"]
 		var ids: Array = pc["cells"]
-		for e in f.get("drift_remove", []):
-			var a: int = int(e[0]); var b: int = int(e[1])
-			if a >= ids.size() or b >= ids.size(): continue
-			var c: Dictionary = cells[ids[a]]
-			c["dl"].erase(ids[b]); c["dr"].erase(ids[b])
-		for e in f.get("drift_add", []):
-			var a2: int = int(e[0]); var b2: int = int(e[1])
-			if a2 >= ids.size() or b2 >= ids.size(): continue
-			var key := "dl" if String(e[2]) == "L" else "dr"
-			var c2: Dictionary = cells[ids[a2]]
-			if not (c2[key] as Array).has(ids[b2]):
-				c2[key].append(ids[b2])
+		var fd := Course.face_drifts(pc["face"])
+		for a in min(ids.size(), (fd[0] as Array).size()):
+			for sd in 2:
+				var key := "dl" if sd == 0 else "dr"
+				for b in fd[sd][a]:
+					if int(b) < ids.size() and not (cells[ids[a]][key] as Array).has(ids[int(b)]):
+						cells[ids[a]][key].append(ids[int(b)])
+
+## Derive calcolate su una faccia sola (indici della faccia), senza correzioni: [sinistra, destra].
+static func face_auto_drifts(face: Dictionary) -> Array:
+	var cs := []
+	for p in face.get("cells", []):
+		cs.append(FaceDB.v2(p))
+	var fwd := []
+	var bwd := []
+	for i in cs.size():
+		fwd.append([])
+		bwd.append([])
+	for l in face.get("links", []):
+		var a := int(l[0])
+		var b := int(l[1])
+		if a < cs.size() and b < cs.size():
+			fwd[a].append(b)
+			bwd[b].append(a)
+	var fb := FaceDB.v2(face["entry"]["dir"]).normalized()
+	var heads := []
+	for i in cs.size():
+		heads.append(Course.heading_of(cs[i], fwd[i].map(func(j): return cs[j]), bwd[i].map(func(j): return cs[j]), fb))
+	return Course.drift_targets(cs, fwd, heads, FACE_CELL_LEN, float(face.get("lane_width", 53.8)))
+
+const FACE_CELL_LEN := 97.4
+
+## Derive di una faccia con le correzioni fatte nell'editor ([da, a, "L"|"R"]).
+static func face_drifts(face: Dictionary) -> Array:
+	var dc := face_auto_drifts(face)
+	var n: int = (dc[0] as Array).size()
+	for e in face.get("drift_remove", []):
+		var a := int(e[0])
+		if a < n:
+			(dc[0][a] as Array).erase(int(e[1]))
+			(dc[1][a] as Array).erase(int(e[1]))
+	for e in face.get("drift_add", []):
+		var a2 := int(e[0])
+		if a2 < n:
+			var sd := 0 if String(e[2]) == "L" else 1
+			if not (dc[sd][a2] as Array).has(int(e[1])):
+				dc[sd][a2].append(int(e[1]))
+	return dc
 
 ## Deriva: una casella avanti in diagonale, oltre una linea nera.
 ## Il punto ideale è una casella avanti e una corsia di lato; vanno bene caselle
