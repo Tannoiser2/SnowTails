@@ -23,5 +23,10 @@ func _init() -> void:
 	main._tap_card(max(idx, 0))
 	main._tap_slot("R")
 	await create_timer(1.2).timeout
-	root.get_texture().get_image().save_png("/tmp/shots/preview.png")
+	root.get_texture().get_image().save_png("/tmp/shots/preview_%s.png" % OS.get_environment("TAG"))
+	var pv: Dictionary = main.board.preview[main.board.preview.size() - 1]
+	var c0: int = main.cur.cell
+	main._on_board_tap(main.course.cells[pv["end"]]["pos"])
+	await create_timer(0.1).timeout
+	print("tocco sull'arrivo: fase ", main.phase, " partita da ", c0)
 	quit()

@@ -285,8 +285,8 @@ La pista corre su un argine di neve con i declivi ai lati e qualche abete sui pe
 
 Ai **rettilinei** (anche con alberelli, cumulo, crepaccio) si possono **sommare** queste
 caratteristiche, nell'editor o nella pista casuale:
-- **Salita**: chi ci passa fa al massimo 4 punti di movimento.
-- **Discesa**: chi parte in discesa va almeno a 5, anche frenando.
+- **Salita**: chi parte da una tessera in salita ha 3 punti di velocità in meno (come un freno in più).
+- **Discesa**: chi parte in discesa guadagna 1 punto ogni 3 (3 → 4, 6 → 8, 9 → 12).
 - **Vento ←/→**: ogni 2 caselle percorse sulla tessera sposta di una corsia; contro il bordo
   è un'ammaccatura.
 - **Ghiaccio**: chi entra derivando continua a derivare; a fine movimento si scivola avanti

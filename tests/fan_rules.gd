@@ -13,25 +13,29 @@ func _init() -> void:
 	p.moves = 1
 	var ok := 0
 	var tot := 0
-	# salita: si parte dal rettilineo prima della salita, corsia centrale, velocità 7
-	p.cell = _cell(1, 2, 2)
-	var outs := g.compute_outs(p, {"L": 4, "R": 4, "B": 1})
-	var max_up := 0
-	for o in outs:
-		var used := 0
-		var seen_up := false
-		for t in o["path"]:
-			if c.slope_of(t) == "up": seen_up = true
-		if seen_up: max_up = max(max_up, (o["path"] as Array).size())
-	tot += 1; if max_up <= SledGame.UP_MAX and max_up > 0: ok += 1
-	print("salita: caselle massime con la salita di mezzo = ", max_up, " (limite ", SledGame.UP_MAX, ")")
-	# discesa: si parte in discesa con velocità 1 → almeno 5
-	p.cell = _cell(6, 1, 2)
-	outs = g.compute_outs(p, {"L": 1, "R": 1, "B": 1})
-	var mn := 99
-	for o in outs: mn = min(mn, (o["path"] as Array).size())
-	tot += 1; if mn >= SledGame.DOWN_MIN or outs[0].get("slid", false): ok += 1
-	print("discesa: caselle con velocità 1 = ", mn, " slid=", outs[0].get("slid", false))
+	# salita: chi parte in salita perde 3 punti (7 → 4)
+	var up_pi := -1
+	var down_pi := -1
+	for pi in c.pieces.size():
+		var sl := String((c.pieces[pi]["mods"] as Dictionary).get("slope", ""))
+		if sl == "up" and up_pi < 0: up_pi = pi
+		if sl == "down" and down_pi < 0: down_pi = pi
+	p.cell = _cell(up_pi, 1, 2)
+	var outs := g.compute_outs(p, {"L": 4, "R": 3, "B": 0})
+	var sp := []
+	for o in outs: sp.append(int(o["speed"]))
+	tot += 1; if sp.min() == 4 and int(outs[0].get("slope", 0)) == -3: ok += 1
+	print("salita: velocità 7 in partenza → ", sp.min(), " (pendenza ", outs[0].get("slope", 0), ")")
+	# discesa: +1 ogni 3 (6 → 8, 9 → 12, 3 → 4)
+	var res_d := []
+	for base in [[2, 1, 0], [3, 3, 0], [5, 4, 0]]:
+		p.cell = _cell(down_pi, 1, 2)
+		outs = g.compute_outs(p, {"L": base[0], "R": base[1], "B": base[2]})
+		var mx := 0
+		for o in outs: mx = max(mx, int(o["speed"]) - int(o.get("bonus_n", 0)))
+		res_d.append(mx)
+	tot += 1; if res_d == [4, 8, 12]: ok += 1
+	print("discesa: 3, 6, 9 → ", res_d)
 	# neve fresca: tessera 7, corsia con cumuli: con velocità 3 si fanno meno di 3 caselle
 	p.cell = _cell(5, 0, 0)
 	outs = g.compute_outs(p, {"L": 2, "R": 2, "B": 1})

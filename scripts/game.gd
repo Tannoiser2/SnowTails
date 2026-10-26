@@ -222,20 +222,30 @@ func commit_play(p: Player, pend: Array) -> void:
 ## Tutti gli esiti possibili del movimento: ogni passo è "avanti" (oltre una linea blu)
 ## o "deriva" (avanti in diagonale oltre una linea nera); dove la rete offre più
 ## caselle si esplorano tutte. Gli esiti sono raggruppati per casella d'arrivo.
-## Segmenti fanmade: in salita non si fanno più di UP_MAX punti di movimento; chi parte in
-## discesa va almeno a DOWN_MIN; la neve fresca costa 2 punti per casella; sul ghiaccio chi
+## Segmenti fanmade: chi parte in salita perde UP_LOSS punti di velocità (come un freno in più);
+## chi parte in discesa guadagna 1 punto ogni DOWN_PER (3 → 4, 6 → 8, 9 → 12); la neve fresca
+## costa 2 punti per casella; sul ghiaccio chi
 ## entra derivando continua a derivare e a fine movimento scivola avanti di una casella;
 ## il vento sposta di una corsia ogni 2 caselle percorse; la baita ripara un'ammaccatura.
-const UP_MAX := 4
-const DOWN_MIN := 5
+const UP_LOSS := 3
+const DOWN_PER := 3
+
+## Velocità con la plancia m partendo dalla casella cell: cani − freno, poi la pendenza.
+func effective_speed(cell_id: int, m: Dictionary) -> int:
+	var speed: int = m["L"] + m["R"] - m["B"]
+	match course.slope_of(cell_id) if cell_id >= 0 else "":
+		"up":
+			speed -= UP_LOSS
+		"down":
+			if speed > 0:
+				speed += speed / DOWN_PER
+	return max(speed, 0)
 
 func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
-	var speed: int = m["L"] + m["R"] - m["B"]
+	var base: int = max(m["L"] + m["R"] - m["B"], 0)
+	var speed: int = effective_speed(p.cell, m)
 	var drift: int = m["R"] - m["L"]
-	var slid := false
-	if course.slope_of(p.cell) == "down" and speed < DOWN_MIN:
-		speed = DOWN_MIN
-		slid = true
+	var slope_delta: int = speed - base
 	if speed <= 0:
 		return [{"path": [], "end": p.cell, "dents": 0, "corner_dents": 0, "crash": "", "bonus": false, "bonus_n": 0, "speed": 0, "sap": []}]
 	var dir := signi(drift)
@@ -254,8 +264,8 @@ func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 	for r in res:
 		r["from"] = p.cell
 		_post_move(r, occ)
-		if slid:
-			r["slid"] = true
+		if slope_delta != 0:
+			r["slope"] = slope_delta
 	if all_paths:
 		return res
 	var best := {}
@@ -307,10 +317,10 @@ func _dfs(cur: int, steps: int, drifts: int, dir: int, total: int, occ: Dictiona
 				continue
 			var cost := 2 if fresh.has(t) else 1
 			var up2: bool = up or course.slope_of(t) == "up"
-			if cost > steps or (up2 and (total - steps) + cost > UP_MAX):
-				# non ci entra: neve fresca troppo profonda per i punti rimasti, o salita oltre il limite
+			if cost > steps:
+				# non ci entra: neve fresca troppo profonda per i punti rimasti
 				var r3 := _out(path, cur, "", cd, total, bonus_n, sap)
-				r3["stopped"] = "fresh" if cost > steps else "up"
+				r3["stopped"] = "fresh"
 				res.append(r3)
 				continue
 			var cd2: int = cd + course.limit_dents(c["piece"], cell(t)["piece"], total) + course.leap_dents(cur, t, total)
@@ -555,11 +565,12 @@ func after_move(p: Player, o: Dictionary) -> bool:
 	if _leap_part(o) > 0:
 		msgs.append("salto troppo lento (+%d)" % _leap_part(o))
 	var in_crev: bool = course.crevasse.has(int(o["end"]))
-	if o.get("slid", false):
-		msgs.append("in discesa non si frena: almeno %d" % DOWN_MIN)
+	var sd := int(o.get("slope", 0))
+	if sd < 0:
+		msgs.append("la salita la rallenta (%d)" % sd)
+	elif sd > 0:
+		msgs.append("in discesa prende velocità (+%d)" % sd)
 	match String(o.get("stopped", "")):
-		"up":
-			msgs.append("la salita la ferma (al massimo %d)" % UP_MAX)
 		"fresh":
 			msgs.append("si pianta nella neve fresca")
 	if o.get("ice", false):
@@ -788,9 +799,9 @@ func ai_score(p: Player, m: Dictionary, o: Dictionary, n_cards: int) -> float:
 	var d2: int = m["R"] - m["L"]
 	if p.smart and not fin:
 		s += _ai_lookahead(p, o, S2, d2)
-		# dalla discesa si riparte ad almeno 5: lo sa per le curve e i salti che vengono dopo
-		if ai_parts["down"] and course.slope_of(int(o["end"])) == "down":
-			S2 = max(S2, DOWN_MIN)
+		# dalla pendenza si riparte più veloci o più lenti: lo sa per le curve e i salti che vengono dopo
+		if ai_parts["down"]:
+			S2 = effective_speed(int(o["end"]), m)
 	if S2 <= 1:
 		s -= 10.0
 	var nl := course.next_limit(float(en["s"]))
@@ -842,8 +853,7 @@ func _ai_lookahead(p: Player, o: Dictionary, S2: int, d2: int) -> float:
 	var id := end
 	for k in (reach + 1 if ai_parts["up"] else 0):
 		if course.slope_of(id) == "up":
-			if S2 > UP_MAX:
-				s -= float(S2 - UP_MAX) * 3.5
+			s -= float(min(S2, UP_LOSS)) * 1.5
 			break
 		var fw: Array = cell(id)["fwd"]
 		if fw.is_empty():

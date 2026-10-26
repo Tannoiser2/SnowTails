@@ -1092,8 +1092,8 @@ Tastiera: 1–5 sceglie una carta; A, S, D (o frecce) la mettono su cane sinistr
 	# --- fanmade ---
 	if fan:
 		c2.add_child(UIKit.heading("Segmenti fanmade"))
-		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_up.png", 64, 64), "Salita", "Chi passa sulla tessera fa al massimo %d punti di movimento." % SledGame.UP_MAX))
-		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_down.png", 64, 64), "Discesa", "Chi parte in discesa va almeno a %d, anche frenando." % SledGame.DOWN_MIN))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_up.png", 64, 64), "Salita", "Chi parte da una tessera in salita ha %d punti di velocità in meno, come un freno in più (non si va sotto zero)." % SledGame.UP_LOSS))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_down.png", 64, 64), "Discesa", "Chi parte da una tessera in discesa guadagna 1 punto di velocità ogni %d: a 3 va a 4, a 6 va a 8, a 9 va a 12." % SledGame.DOWN_PER))
 		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_fresh.png", 64, 64), "Neve fresca", "Ogni casella coi cumuli costa 2 punti di movimento; la prima slitta che ci passa la spazza via."))
 		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_ice.png", 64, 64), "Ghiaccio", "Chi entra derivando continua a derivare finché è sul ghiaccio; a fine movimento scivola avanti di una casella."))
 		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_wind.png", 64, 64), "Vento", "Ogni 2 caselle percorse sulla tessera ti sposta di una corsia nel verso della manica a vento; contro il bordo è un'ammaccatura."))
@@ -1693,6 +1693,19 @@ func _on_board_tap(w: Vector2) -> void:
 				best = k
 		if best >= 0:
 			_do_act({"k": "slot", "v": best})
+	elif phase == "cards" and show_paths and not pending.is_empty() and not board.preview.is_empty():
+		# percorsi visibili: toccando un arrivo la slitta parte subito
+		var end := -1
+		for pv in board.preview:
+			var d0: float = w.distance_to(course.cells[pv["end"]]["pos"])
+			if d0 < bd:
+				bd = d0
+				end = int(pv["end"])
+		if end >= 0:
+			for o in game.compute_outs(cur, game.mat_after(cur, pending)):
+				if int(o["end"]) == end:
+					_submit_move(pending, o)
+					return
 	elif phase == "dest":
 		for i in outs.size():
 			var d: float = w.distance_to(course.cells[outs[i]["end"]]["pos"])
@@ -2332,76 +2345,102 @@ func _tile(title: String, value: String, warn := false) -> PanelContainer:
 	pc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
 	pc.add_theme_stylebox_override("panel", UIKit.box(Color("fdecea") if warn else UIKit.SOFT, 8, UIKit.DANGER if warn else Color(0, 0, 0, 0), 2 if warn else 0, 4))
 	var v := VBoxContainer.new()
-	v.add_theme_constant_override("separation", -2)
+	v.add_theme_constant_override("separation", -4)
 	pc.add_child(v)
-	var t := UIKit.label(title, 11, UIKit.MUTED)
+	var t := UIKit.label(title, 12, UIKit.MUTED)
 	t.autowrap_mode = TextServer.AUTOWRAP_OFF
 	v.add_child(t)
-	var val := UIKit.label(value, 15, UIKit.DANGER if warn else UIKit.INK)
-	val.autowrap_mode = TextServer.AUTOWRAP_OFF
+	var val := _big(value, 26, UIKit.DANGER if warn else UIKit.INK)
 	v.add_child(val)
 	return pc
 
-func _stat_grid() -> GridContainer:
-	var g := GridContainer.new()
-	g.columns = 4
-	g.add_theme_constant_override("h_separation", 5)
-	g.add_theme_constant_override("v_separation", 5)
+## Numero o valore grande, con il carattere dei titoli del menu.
+func _big(text: String, size: int, col: Color) -> Label:
+	var l := Label.new()
+	l.text = text
+	l.add_theme_font_override("font", UIKit.font(UIKit.F_TITLE))
+	l.add_theme_font_size_override("font_size", size)
+	l.add_theme_color_override("font_color", col)
+	l.autowrap_mode = TextServer.AUTOWRAP_OFF
+	return l
+
+## Riga lunga: che cosa c'è davanti (curva, traguardo, salto, tratto fanmade) e quanto manca.
+func _info_row(title: String, value: String, warn := false) -> PanelContainer:
+	var pc := PanelContainer.new()
+	pc.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	pc.add_theme_stylebox_override("panel", UIKit.box(Color("fdecea") if warn else UIKit.SOFT, 8, UIKit.DANGER if warn else Color(0, 0, 0, 0), 2 if warn else 0, 4))
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 8)
+	pc.add_child(h)
+	var t := UIKit.label(title, 15, UIKit.MUTED)
+	t.autowrap_mode = TextServer.AUTOWRAP_OFF
+	t.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	t.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	h.add_child(t)
+	h.add_child(_big(value, 22, UIKit.DANGER if warn else UIKit.INK))
+	return pc
+
+func _stat_grid() -> Control:
 	var m := game.mat_after(cur, pending if (phase == "cards" or phase == "dest") else [])
-	var speed: int = max(0, m["L"] + m["R"] - m["B"])
-	if course.slope_of(cur.cell) == "down":
-		speed = max(speed, SledGame.DOWN_MIN)
+	var speed: int = game.effective_speed(cur.cell, m)
 	var d: int = m["R"] - m["L"]
 	var c: Dictionary = course.cells[cur.cell]
-	g.add_child(_tile("Velocità", str(speed)))
-	g.add_child(_tile("Deriva", "0" if d == 0 else "%d %s" % [min(abs(d), speed), "→" if d > 0 else "←"]))
+	var outer := HBoxContainer.new()
+	outer.add_theme_constant_override("separation", 5)
+	var col := VBoxContainer.new()
+	col.add_theme_constant_override("separation", 5)
+	col.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	outer.add_child(col)
+	# 1. velocità, deriva, bonus
+	var top := HBoxContainer.new()
+	top.add_theme_constant_override("separation", 5)
+	col.add_child(top)
+	var sl := course.slope_of(cur.cell)
+	top.add_child(_tile("Velocità" + (" (salita)" if sl == "up" else (" (discesa)" if sl == "down" else "")), str(speed)))
+	top.add_child(_tile("Deriva", "0" if d == 0 else "%d %s" % [min(abs(d), speed), "→" if d > 0 else "←"]))
 	var bonus := "—"
 	if d == 0 and cur.moves > 0 and speed > 0:
 		bonus = "+%d" % game.rank_of(cur)
-	g.add_child(_tile("Bonus", bonus))
-	g.add_child(_tile("Ammacc.", "%d%s / 4" % [cur.dents, "½" if cur.half else ""], cur.dents >= 3))
+	top.add_child(_tile("Bonus", bonus))
+	# 2. che cosa c'è davanti: al massimo due righe
+	var rows := []
 	var nl := course.next_limit(float(c["s"]))
 	if not nl.is_empty():
 		var dist := int(round((float(nl["s"]) - float(c["s"])) / course.cell_len))
-		g.add_child(_tile("Curva lim. %d" % nl["lim"], "fra %d" % max(dist, 0), speed > int(nl["lim"]) and dist <= speed))
+		rows.append(["Curva, limite %d" % nl["lim"], "fra %d" % max(dist, 0), speed > int(nl["lim"]) and dist <= speed])
 	else:
 		var df := int(round((course.finish_s - float(c["s"])) / course.cell_len))
-		g.add_child(_tile("Traguardo", ("fra %d" % df) if df > 0 else "passato"))
+		rows.append(["Traguardo", ("fra %d" % df) if df > 0 else "passato", false])
 	var lp := course.next_leap(float(c["s"]))
 	if not lp.is_empty() and (float(lp["s"]) - float(c["s"])) / course.cell_len <= 14:
 		var dl := int(round((float(lp["s"]) - float(c["s"])) / course.cell_len))
-		g.add_child(_tile("Salto min. %d" % lp["min"], "fra %d" % max(dl, 0), speed < int(lp["min"]) and dl <= speed))
-	# caratteristiche fanmade qui o poco più avanti (al massimo due riquadri)
+		rows.append(["Salto, minimo %d" % lp["min"], "fra %d" % max(dl, 0), speed < int(lp["min"]) and dl <= speed])
 	var sg := _seg_ahead(cur.cell, max(speed, 1) + 3)
 	if not sg.is_empty():
 		var when := "qui" if int(sg["dist"]) == 0 else "fra %d" % int(sg["dist"])
-		var shown := 0
 		for ft in sg["feats"]:
-			if shown >= 2:
-				break
-			var it: Array = {"up": ["Salita", "max %d" % SledGame.UP_MAX], "down": ["Discesa", "min %d" % SledGame.DOWN_MIN],
-				"windR": ["Vento →", "di lato"], "windL": ["Vento ←", "di lato"], "ice": ["Ghiaccio", "scivola"],
-				"fresh": ["Neve fresca", "costa 2"], "hut": ["Baita", "ripara 1"], "fork": ["Bivio", "scegli"]}.get(ft, [ft, ""])
-			g.add_child(_tile(it[0], "%s: %s" % [when, it[1]], ft == "up" and speed > SledGame.UP_MAX))
-			shown += 1
-	g.add_child(_tile("Mazzo", str(cur.deck.size())))
-	g.add_child(_tile("Scarti", str(cur.discard.size() + cur.used.size())))
+			var it: Array = {"up": ["Salita: −%d velocità" % SledGame.UP_LOSS], "down": ["Discesa: +1 ogni %d" % SledGame.DOWN_PER],
+				"windR": ["Vento →: sposta di lato"], "windL": ["Vento ←: sposta di lato"], "ice": ["Ghiaccio: si scivola"],
+				"fresh": ["Neve fresca: costa 2"], "hut": ["Baita: ripara metà"], "fork": ["Bivio: scegli il ramo"]}.get(ft, [ft])
+			rows.append([it[0], when, false])
+	for r in rows.slice(0, 2):
+		col.add_child(_info_row(r[0], r[1], r[2]))
 	if _is_mine(cur):
 		var tb := Button.new()
 		tb.toggle_mode = true
 		tb.button_pressed = show_paths
 		tb.text = "Percorsi\n%s" % ("sì" if show_paths else "no")
-		tb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
-		tb.add_theme_font_size_override("font_size", 12)
-		tb.custom_minimum_size = Vector2(0, 0)
+		tb.size_flags_vertical = Control.SIZE_EXPAND_FILL
+		tb.add_theme_font_size_override("font_size", 13)
+		tb.custom_minimum_size = Vector2(78, 0)
 		var on_col: Color = cur.color
 		UIKit.style_button(tb, on_col if show_paths else UIKit.SOFT, Color.WHITE if show_paths else UIKit.INK, on_col, 2, 10)
 		tb.tooltip_text = "Mostra sulla pista tutti i percorsi possibili con le carte messe sulla plancia"
 		tb.toggled.connect(func(on):
 			show_paths = on
 			_refresh())
-		g.add_child(tb)
-	return g
+		outer.add_child(tb)
+	return outer
 
 ## Prima tessera con caratteristiche fanmade sulla strada (casella attuale compresa) entro n
 ## caselle in avanti: distanza ed elenco delle caratteristiche.
@@ -2510,7 +2549,7 @@ func _render_bottom() -> void:
 		return
 	var use_pending := phase == "cards" or phase == "dest"
 	var m := game.mat_after(cur, pending if use_pending else [])
-	bottom_box.add_child(_mat(m, phase == "cards"))
+	bottom_box.add_child(_mat_row(_mat(m, phase == "cards")))
 	if phase in ["ai", "wait", "posting"]:
 		var me = null
 		for q in game.players:
@@ -2580,6 +2619,43 @@ func _mat(_m: Dictionary, interactive: bool) -> MatView:
 	mv.slot_tapped.connect(_tap_slot)
 	mv.setup.call_deferred(cur, pend, interactive, interactive and sel >= 0)
 	return mv
+
+## Plancia con il mazzo a sinistra e gli scarti a destra.
+func _mat_row(mv: MatView) -> HBoxContainer:
+	var h := HBoxContainer.new()
+	h.add_theme_constant_override("separation", 6)
+	h.size_flags_vertical = mv.size_flags_vertical
+	mv.size_flags_horizontal = Control.SIZE_EXPAND_FILL
+	var tex := CardArt.mat(cur.id)
+	if layout_mode != "land" and tex != null:
+		# in verticale la plancia ha la sua larghezza: mazzo e scarti le stanno accanto
+		var ts := tex.get_size()
+		mv.custom_minimum_size.x = mv.custom_minimum_size.y * ts.x / ts.y
+		mv.size_flags_horizontal = Control.SIZE_SHRINK_CENTER
+		h.alignment = BoxContainer.ALIGNMENT_CENTER
+		h.add_theme_constant_override("separation", 14)
+	h.add_child(_pile("Mazzo", cur.deck.size()))
+	h.add_child(mv)
+	h.add_child(_pile("Scarti", cur.discard.size() + cur.used.size()))
+	return h
+
+func _pile(title: String, n: int) -> PanelContainer:
+	var pc := PanelContainer.new()
+	pc.add_theme_stylebox_override("panel", UIKit.box(UIKit.SOFT, 8, Color(0, 0, 0, 0), 0, 4))
+	pc.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+	pc.custom_minimum_size = Vector2(58, 0)
+	var v := VBoxContainer.new()
+	v.add_theme_constant_override("separation", -4)
+	v.alignment = BoxContainer.ALIGNMENT_CENTER
+	pc.add_child(v)
+	var t := UIKit.label(title, 12, UIKit.MUTED)
+	t.autowrap_mode = TextServer.AUTOWRAP_OFF
+	t.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(t)
+	var b := _big(str(n), 26, UIKit.INK)
+	b.horizontal_alignment = HORIZONTAL_ALIGNMENT_CENTER
+	v.add_child(b)
+	return pc
 
 func _stats(m: Dictionary) -> RichTextLabel:
 	var speed: int = m["L"] + m["R"] - m["B"]
