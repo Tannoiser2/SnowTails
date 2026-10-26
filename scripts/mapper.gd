@@ -373,9 +373,8 @@ func _refresh(msg := "") -> void:
 		for l in links:
 			fwd[l[0]].append(l[1]); bwd[l[1]].append(l[0])
 		var heads := []
-		var fb := FaceDB.v2(face["entry"]["dir"]).normalized()
 		for i in cells.size():
-			heads.append(Course.heading_of(cells[i], fwd[i].map(func(j): return cells[j]), bwd[i].map(func(j): return cells[j]), fb))
+			heads.append(Course.heading_of(cells[i], fwd[i].map(func(j): return cells[j]), bwd[i].map(func(j): return cells[j]), Course.face_fallback_dir(face, cells[i])))
 		_drift_cache = Course.drift_targets(cells, fwd, heads, 97.4, float(face.get("lane_width", 53.8)))
 		_auto_drift = [[], []]
 		for side in 2:

@@ -1,32 +1,13 @@
 extends SceneTree
 ## Confronta le derive del gioco (su tutto il percorso) con quelle che l'editor mostra per ogni faccia.
 func _face_drifts(face: Dictionary) -> Array:
-	var cells := []
-	for p in face["cells"]:
-		cells.append(FaceDB.v2(p))
-	var links: Array = face.get("links", [])
-	var fwd := []
-	var bwd := []
-	for i in cells.size():
-		fwd.append([]); bwd.append([])
-	for l in links:
-		fwd[l[0]].append(l[1]); bwd[l[1]].append(l[0])
-	var heads := []
-	var fb := FaceDB.v2(face["entry"]["dir"]).normalized()
-	for i in cells.size():
-		heads.append(Course.heading_of(cells[i], fwd[i].map(func(j): return cells[j]), bwd[i].map(func(j): return cells[j]), fb))
-	var dc := Course.drift_targets(cells, fwd, heads, 97.4, float(face.get("lane_width", 53.8)))
-	for e in face.get("drift_remove", []):
-		(dc[0][int(e[0])] as Array).erase(int(e[1])); (dc[1][int(e[0])] as Array).erase(int(e[1]))
-	for e in face.get("drift_add", []):
-		var sd := 0 if e[2] == "L" else 1
-		if not (dc[sd][int(e[0])] as Array).has(int(e[1])): dc[sd][int(e[0])].append(int(e[1]))
+	var dc := Course.face_drifts(face)
 	var out := {}
 	for sd in 2:
-		for i in cells.size():
+		for i in (dc[sd] as Array).size():
 			for j in dc[sd][i]:
 				out["%d>%d" % [i, j]] = true
-	return [out, cells.size()]
+	return [out, (face["cells"] as Array).size()]
 
 func _init() -> void:
 	var da := DirAccess.open("res://data/courses/")

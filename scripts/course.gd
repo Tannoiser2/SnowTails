@@ -549,13 +549,21 @@ static func face_auto_drifts(face: Dictionary) -> Array:
 		if a < cs.size() and b < cs.size():
 			fwd[a].append(b)
 			bwd[b].append(a)
-	var fb := FaceDB.v2(face["entry"]["dir"]).normalized()
 	var heads := []
 	for i in cs.size():
-		heads.append(Course.heading_of(cs[i], fwd[i].map(func(j): return cs[j]), bwd[i].map(func(j): return cs[j]), fb))
+		heads.append(Course.heading_of(cs[i], fwd[i].map(func(j): return cs[j]), bwd[i].map(func(j): return cs[j]), face_fallback_dir(face, cs[i])))
 	return Course.drift_targets(cs, fwd, heads, FACE_CELL_LEN, float(face.get("lane_width", 53.8)))
 
 const FACE_CELL_LEN := 97.4
+
+## Direzione di marcia per una casella senza collegamenti nella faccia: quella dell'ingresso o
+## dell'uscita, la più vicina (nelle inversioni le due sono opposte).
+static func face_fallback_dir(face: Dictionary, p: Vector2) -> Vector2:
+	var em := FaceDB.v2(face["entry"]["mid"])
+	var xm := FaceDB.v2(face["exit"]["mid"])
+	if p.distance_to(xm) < p.distance_to(em):
+		return FaceDB.v2(face["exit"]["dir"]).normalized()
+	return FaceDB.v2(face["entry"]["dir"]).normalized()
 
 ## Derive di una faccia con le correzioni fatte nell'editor ([da, a, "L"|"R"]).
 static func face_drifts(face: Dictionary) -> Array:
