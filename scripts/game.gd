@@ -241,10 +241,20 @@ func effective_speed(cell_id: int, m: Dictionary) -> int:
 				speed += speed / DOWN_PER
 	return max(speed, 0)
 
+## Deriva con la plancia m partendo dalla casella cell: cane destro − cane sinistro, più il vento
+## della tessera (WIND_PUSH corsie nel suo verso). Positiva = a destra.
+const WIND_PUSH := 1
+func effective_drift(cell_id: int, m: Dictionary) -> int:
+	var d: int = m["R"] - m["L"]
+	if cell_id >= 0:
+		d += course.wind_of(cell_id) * WIND_PUSH
+	return d
+
 func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 	var base: int = max(m["L"] + m["R"] - m["B"], 0)
 	var speed: int = effective_speed(p.cell, m)
-	var drift: int = m["R"] - m["L"]
+	var drift: int = effective_drift(p.cell, m)
+	var wind_d: int = drift - (m["R"] - m["L"])
 	var slope_delta: int = speed - base
 	if speed <= 0:
 		return [{"path": [], "end": p.cell, "dents": 0, "corner_dents": 0, "crash": "", "bonus": false, "bonus_n": 0, "speed": 0, "sap": []}]
@@ -258,7 +268,7 @@ func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 	var res := []
 	var up0: bool = course.slope_of(p.cell) == "up"
 	_dfs(p.cell, speed, k, dir, speed, occ, [], 0, res, 0, [], up0, "")
-	if drift == 0 and p.moves > 0:
+	if drift == 0 and m["L"] == m["R"] and p.moves > 0:
 		var b := rank_of(p)
 		_dfs(p.cell, speed + b, 0, 0, speed + b, occ, [], 0, res, b, [], up0, "")
 	for r in res:
@@ -266,6 +276,8 @@ func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 		_post_move(r, occ)
 		if slope_delta != 0:
 			r["slope"] = slope_delta
+		if wind_d != 0:
+			r["wind"] = wind_d
 	if all_paths:
 		return res
 	var best := {}
@@ -508,29 +520,6 @@ func _post_move(r: Dictionary, occ: Dictionary) -> void:
 				r["ice"] = true
 				if saplings.has(t) and not sap.has(t):
 					sap.append(t)
-	# vento: una corsia di lato ogni 2 caselle percorse sulle tessere col vento
-	if String(r["crash"]) == "":
-		var n := 0
-		var w := 0
-		for t in path:
-			var ww := course.wind_of(t)
-			if ww != 0:
-				n += 1
-				w = ww
-		for i in n / 2:
-			var t2: int = cell(end).get("side_r" if w > 0 else "side_l", -1)
-			if t2 < 0:
-				var h2 := course.heading(end)
-				r["crash"] = "edge"
-				r["hit_dir"] = Vector2(-h2.y, h2.x) * float(w)
-				break
-			if occ.has(t2):
-				break
-			path.append(t2)
-			end = t2
-			r["wind"] = int(r.get("wind", 0)) + 1
-			if saplings.has(t2) and not sap.has(t2):
-				sap.append(t2)
 	r["path"] = path
 	r["end"] = end
 	r["sap"] = sap
@@ -575,8 +564,8 @@ func after_move(p: Player, o: Dictionary) -> bool:
 			msgs.append("si pianta nella neve fresca")
 	if o.get("ice", false):
 		msgs.append("scivola sul ghiaccio")
-	if int(o.get("wind", 0)) > 0:
-		msgs.append("il vento la sposta di %d corsi%s" % [int(o["wind"]), "a" if int(o["wind"]) == 1 else "e"])
+	if int(o.get("wind", 0)) != 0:
+		msgs.append("il vento la spinge %s" % ("a destra" if int(o["wind"]) > 0 else "a sinistra"))
 	if in_crev:
 		msgs.append("si ferma nella spaccatura e non pesca")
 	var swept := []
@@ -862,7 +851,7 @@ func _ai_lookahead(p: Player, o: Dictionary, S2: int, d2: int) -> float:
 	# vento: al prossimo turno sposterà di S2/2 corsie; conviene avere spazio da quel lato
 	var w := course.wind_of(end)
 	if w != 0 and S2 > 1 and ai_parts["wind"]:
-		var pushes: int = S2 / 2
+		var pushes: int = WIND_PUSH
 		var room := 0
 		var cc := end
 		for i in pushes:

@@ -48,11 +48,20 @@ func _init() -> void:
 	outs = g.compute_outs(p, {"L": 2, "R": 2, "B": 2})
 	tot += 1; if outs.size() > 0 and outs[0].get("ice", false) and (outs[0]["path"] as Array).size() == 3: ok += 1
 	print("ghiaccio: velocità 2 → caselle ", (outs[0]["path"] as Array).size(), " ice=", outs[0].get("ice", false))
-	# vento (con la discesa: si parte a 5 almeno) → spinte di lato
-	p.cell = _cell(6, 0, 2)
-	outs = g.compute_outs(p, {"L": 2, "R": 2, "B": 0})
-	tot += 1; if int(outs[0].get("wind", 0)) >= 1: ok += 1
-	print("vento: spinte = ", outs[0].get("wind", 0), " fine corsia laterale ", c.cells[outs[0]["end"]]["lat"])
+	# vento: la manica a vento aggiunge 1 di deriva nel suo verso (cani uguali → deriva 1)
+	var wind_pi := -1
+	for pi in c.pieces.size():
+		if (c.pieces[pi]["mods"] as Dictionary).has("wind") and c.slope_of(c.pieces[pi]["cells"][0]) == "":
+			wind_pi = pi
+			break
+	if wind_pi < 0:
+		for pi in c.pieces.size():
+			if (c.pieces[pi]["mods"] as Dictionary).has("wind"): wind_pi = pi; break
+	p.cell = _cell(wind_pi, 0, 2)
+	var wd := g.effective_drift(p.cell, {"L": 3, "R": 3, "B": 1})
+	outs = g.compute_outs(p, {"L": 3, "R": 3, "B": 1})
+	tot += 1; if abs(wd) == 1 and int(outs[0].get("wind", 0)) == wd: ok += 1
+	print("vento: deriva con cani uguali = ", wd, " esito vento ", outs[0].get("wind", 0))
 	# baita: ci si ferma sopra con un'ammaccatura → riparata, niente carte
 	var hut: int = c.huts.keys()[0]
 	p.dents = 3

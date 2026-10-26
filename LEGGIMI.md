@@ -287,8 +287,8 @@ Ai **rettilinei** (anche con alberelli, cumulo, crepaccio) si possono **sommare*
 caratteristiche, nell'editor o nella pista casuale:
 - **Salita**: chi parte da una tessera in salita ha 3 punti di velocità in meno (come un freno in più).
 - **Discesa**: chi parte in discesa guadagna 1 punto ogni 3 (3 → 4, 6 → 8, 9 → 12).
-- **Vento ←/→**: ogni 2 caselle percorse sulla tessera sposta di una corsia; contro il bordo
-  è un'ammaccatura.
+- **Vento ←/→**: chi parte dalla tessera ha 1 di deriva in più nel verso della manica a vento
+  (si somma o si sottrae a quella dei cani); bonus di equilibrio solo con deriva totale zero.
 - **Ghiaccio**: chi entra derivando continua a derivare; a fine movimento si scivola avanti
   di una casella.
 - **Neve fresca**: le caselle coi cumuli costano 2 punti; la prima slitta che ci passa li spazza via.
