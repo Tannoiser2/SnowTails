@@ -457,7 +457,7 @@ func redraw() -> void:
 			r.position = endp
 			_marks.add_child(r)
 			if int(pv["dents"]) > 0:
-				var lb := _label("−%d" % int(pv["dents"]), Color("d23a3a"), 44)
+				var lb := _label(("bordo −%d" if String(pv.get("crash", "")) == "edge" else "−%d") % int(pv["dents"]), Color("d23a3a"), 44)
 				lb.position = endp + Vector3(0, 0.16, 0)
 				_marks.add_child(lb)
 	_update_teams(true)

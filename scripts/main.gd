@@ -1782,7 +1782,7 @@ func _confirm() -> void:
 		var lbl := ""
 		var col := Color("147f7a")
 		if o["dents"] > 0:
-			lbl = "−%d" % o["dents"]
+			lbl = ("bordo −%d" if o["crash"] == "edge" else "−%d") % o["dents"]
 			col = Color("d23a3a")
 		elif o["crash"] == "sled":
 			lbl = "urto"
@@ -2253,7 +2253,7 @@ func _refresh() -> void:
 			if seen.has(key) or seen.size() >= 60:
 				continue
 			seen[key] = true
-			board.preview.append({"path": o["path"], "from": cur.cell, "end": o["end"], "dents": o["dents"], "color": cur.color})
+			board.preview.append({"path": o["path"], "from": cur.cell, "end": o["end"], "dents": o["dents"], "color": cur.color, "crash": String(o["crash"])})
 			pts.append(course.cells[o["end"]]["pos"])
 		sig = "%d|%s" % [cur.cell, str(m)]
 		if sig != _preview_sig:
