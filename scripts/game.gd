@@ -239,6 +239,8 @@ func effective_speed(cell_id: int, m: Dictionary) -> int:
 		"down":
 			if speed > 0:
 				speed += speed / DOWN_PER
+	if cell_id >= 0:
+		speed += course.wind_speed_of(cell_id)
 	return max(speed, 0)
 
 ## Deriva con la plancia m partendo dalla casella cell: cane destro − cane sinistro, più il vento
@@ -278,6 +280,8 @@ func compute_outs(p: Player, m: Dictionary, all_paths := false) -> Array:
 			r["slope"] = slope_delta
 		if wind_d != 0:
 			r["wind"] = wind_d
+		if course.wind_speed_of(p.cell) != 0:
+			r["wind_speed"] = course.wind_speed_of(p.cell)
 	if all_paths:
 		return res
 	var best := {}
@@ -565,7 +569,9 @@ func after_move(p: Player, o: Dictionary) -> bool:
 	if o.get("ice", false):
 		msgs.append("scivola sul ghiaccio")
 	if int(o.get("wind", 0)) != 0:
-		msgs.append("il vento la spinge %s" % ("a destra" if int(o["wind"]) > 0 else "a sinistra"))
+		msgs.append("il vento la spinge %s (%d)" % ["a destra" if int(o["wind"]) > 0 else "a sinistra", abs(int(o["wind"]))])
+	if int(o.get("wind_speed", 0)) != 0:
+		msgs.append("vento %s (%+d)" % ["a favore" if int(o["wind_speed"]) > 0 else "contrario", int(o["wind_speed"])])
 	if in_crev:
 		msgs.append("si ferma nella spaccatura e non pesca")
 	var swept := []

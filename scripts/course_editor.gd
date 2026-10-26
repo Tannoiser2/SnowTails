@@ -237,7 +237,7 @@ func _clear() -> void:
 	pieces = []
 	_refresh()
 
-const MOD_NAMES := {"up": "salita", "down": "discesa", "L": "vento ←", "R": "vento →", "ice": "ghiaccio", "fresh": "neve fresca", "hut": "baita"}
+const MOD_NAMES := {"up": "salita", "down": "discesa", "L": "vento ←", "R": "vento →", "F": "vento a favore", "C": "vento contrario", "ice": "ghiaccio", "fresh": "neve fresca", "hut": "baita"}
 
 func _label_of(item) -> String:
 	var fid := Course.item_id(item)
@@ -259,7 +259,9 @@ func _label_of(item) -> String:
 	var m := Course.item_mods(item)
 	var tags := []
 	if m.has("slope"): tags.append(MOD_NAMES[m["slope"]])
-	if m.has("wind"): tags.append(MOD_NAMES[m["wind"]])
+	if m.has("wind"):
+		var wf := int(m.get("wind_force", 1))
+		tags.append(MOD_NAMES[m["wind"]] + (" ?" if wf == 0 else " %d" % wf))
 	for k in ["ice", "fresh", "hut"]:
 		if m.get(k, false): tags.append(MOD_NAMES[k])
 	return base + ("  ★ " + ", ".join(tags) if not tags.is_empty() else "")
@@ -277,7 +279,7 @@ func _refresh_mods() -> void:
 	var m := Course.item_mods(pieces[i])
 	mods_box.add_child(UIKit.heading("Caratteristiche del pezzo %d ★" % (i + 1), 14))
 	for row in [["Pendenza", "slope", [["piano", ""], ["salita", "up"], ["discesa", "down"]]],
-			["Vento", "wind", [["no", ""], ["←", "L"], ["→", "R"]]]]:
+			["Vento", "wind", [["no", ""], ["←", "L"], ["→", "R"], ["a favore", "F"], ["contro", "C"]]]]:
 		var h := HBoxContainer.new()
 		h.add_theme_constant_override("separation", 4)
 		var l := UIKit.label(row[0], 14, UIKit.MUTED)
@@ -293,6 +295,21 @@ func _refresh_mods() -> void:
 			b.pressed.connect(_set_mod.bind(i, row[1], opt[1]))
 			h.add_child(b)
 		mods_box.add_child(h)
+		if row[1] == "wind" and m.has("wind"):
+			# forza: 1, 2, 3 oppure «?» = tirata a sorte all'inizio di ogni gara
+			var hf := HBoxContainer.new()
+			hf.add_theme_constant_override("separation", 4)
+			var lf := UIKit.label("Forza", 14, UIKit.MUTED)
+			lf.custom_minimum_size = Vector2(76, 0)
+			lf.size_flags_vertical = Control.SIZE_SHRINK_CENTER
+			hf.add_child(lf)
+			for fv in [[1, "1"], [2, "2"], [3, "3"], [0, "? a sorte"]]:
+				var bf := UIKit.button(fv[1], int(m.get("wind_force", 1)) == fv[0])
+				bf.custom_minimum_size = Vector2(0, 32)
+				bf.add_theme_font_size_override("font_size", 13)
+				bf.pressed.connect(_set_mod.bind(i, "wind_force", fv[0]))
+				hf.add_child(bf)
+			mods_box.add_child(hf)
 	var t := HBoxContainer.new()
 	t.add_theme_constant_override("separation", 4)
 	for spec in [["Ghiaccio", "ice"], ["Neve fresca", "fresh"], ["Baita", "hut"]]:
@@ -307,6 +324,10 @@ func _refresh_mods() -> void:
 func _set_mod(i: int, key: String, value) -> void:
 	var m := Course.item_mods(pieces[i])
 	if value is bool and not value or value is String and value == "":
+		m.erase(key)
+		if key == "wind":
+			m.erase("wind_force")
+	elif key == "wind_force" and value == 1:
 		m.erase(key)
 	else:
 		m[key] = value

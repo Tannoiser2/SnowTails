@@ -176,12 +176,44 @@ func has_mod(id: int, key: String) -> bool:
 		return v
 	return String(v) != ""
 
-## Vento della tessera di una casella: +1 spinge a destra, -1 a sinistra, 0 niente vento.
+## Forza del vento della tessera (1, 2 o 3; 0 = da tirare a sorte all'inizio della gara).
+static func wind_force(mods: Dictionary) -> int:
+	return clampi(int(mods.get("wind_force", 1)), 1, 3)
+
+## Vento di lato della tessera di una casella: +forza spinge a destra, −forza a sinistra, 0 niente.
 func wind_of(id: int) -> int:
-	var w := String(pieces[int(cells[id]["piece"])]["mods"].get("wind", ""))
-	if w == "":
-		return 0
-	return -1 if w == "L" else 1
+	var mods: Dictionary = pieces[int(cells[id]["piece"])]["mods"]
+	match String(mods.get("wind", "")):
+		"L": return -wind_force(mods)
+		"R": return wind_force(mods)
+	return 0
+
+## Vento a favore (+forza alla velocità) o contrario (−forza), 0 se non c'è.
+func wind_speed_of(id: int) -> int:
+	var mods: Dictionary = pieces[int(cells[id]["piece"])]["mods"]
+	match String(mods.get("wind", "")):
+		"F": return wind_force(mods)
+		"C": return -wind_force(mods)
+	return 0
+
+## All'inizio di ogni gara: neve fresca (fresh = true) in caselle a caso e forza del vento
+## «a sorte» (wind_force = 0) tirata fra 1 e 3. Il risultato viaggia uguale agli altri dispositivi.
+static func randomize_def(def: Dictionary, rng: RandomNumberGenerator = null) -> Dictionary:
+	if rng == null:
+		rng = RandomNumberGenerator.new()
+		rng.randomize()
+	var d := def.duplicate(true)
+	var out := []
+	for item in d.get("pieces", []):
+		if item is Dictionary and item.has("mods"):
+			var m: Dictionary = item["mods"]
+			if typeof(m.get("fresh", false)) == TYPE_BOOL and m.get("fresh", false):
+				m["fresh"] = rng.randi_range(1, 999999)
+			if m.has("wind") and int(m.get("wind_force", 1)) == 0:
+				m["wind_force"] = rng.randi_range(1, 3)
+		out.append(item)
+	d["pieces"] = out
+	return d
 
 ## Caselle della tessera per colonna (0 = ingresso) e corsia (0..4 da sinistra), sui rettilinei.
 func grid_cell(pi: int, col: int, lane: int) -> int:
@@ -204,11 +236,28 @@ const HUT_CELL := [3, 0]
 func _apply_mod_cells() -> void:
 	for pi in pieces.size():
 		var mods: Dictionary = pieces[pi]["mods"]
-		if mods.get("fresh", false):
+		var fv = mods.get("fresh", false)
+		if typeof(fv) == TYPE_BOOL and fv:
 			for cl in FRESH_PATTERN:
 				var id := grid_cell(pi, cl[0], cl[1])
 				if id >= 0 and not saplings.has(id) and not crevasse.has(id):
 					fresh[id] = true
+		elif typeof(fv) in [TYPE_INT, TYPE_FLOAT] and int(fv) > 0:
+			# cumuli a caso (seme della gara): da 5 a 8, al massimo 3 per colonna
+			var r := RandomNumberGenerator.new()
+			r.seed = int(fv)
+			var want := r.randi_range(5, 8)
+			var per_col := {}
+			var tries := 0
+			while want > 0 and tries < 200:
+				tries += 1
+				var col := r.randi_range(0, 5)
+				var id2 := grid_cell(pi, col, r.randi_range(0, 4))
+				if id2 < 0 or fresh.has(id2) or saplings.has(id2) or crevasse.has(id2) or int(per_col.get(col, 0)) >= 3:
+					continue
+				fresh[id2] = true
+				per_col[col] = int(per_col.get(col, 0)) + 1
+				want -= 1
 		if mods.get("hut", false):
 			var h := grid_cell(pi, HUT_CELL[0], HUT_CELL[1])
 			if h >= 0:

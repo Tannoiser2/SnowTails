@@ -287,11 +287,12 @@ Ai **rettilinei** (anche con alberelli, cumulo, crepaccio) si possono **sommare*
 caratteristiche, nell'editor o nella pista casuale:
 - **Salita**: chi parte da una tessera in salita ha 3 punti di velocità in meno (come un freno in più).
 - **Discesa**: chi parte in discesa guadagna 1 punto ogni 3 (3 → 4, 6 → 8, 9 → 12).
-- **Vento ←/→**: chi parte dalla tessera ha 1 di deriva in più nel verso della manica a vento
-  (si somma o si sottrae a quella dei cani); bonus di equilibrio solo con deriva totale zero.
+- **Vento**: forza 1, 2 o 3 (`wind_force`; 0 = tirata a sorte a inizio gara). Di lato (←/→): chi
+  parte dalla tessera ha tanta deriva in più nel verso del vento (sommata a quella dei cani);
+  a favore (`F`): tanta velocità in più; contrario (`C`): tanta in meno.
 - **Ghiaccio**: chi entra derivando continua a derivare; a fine movimento si scivola avanti
   di una casella.
-- **Neve fresca**: le caselle coi cumuli costano 2 punti; la prima slitta che ci passa li spazza via.
+- **Neve fresca**: le caselle coi cumuli costano 2 punti; la prima slitta che ci passa li spazza via. I cumuli (da 5 a 8) cambiano posto a ogni gara (`Course.randomize_def`).
 - **Baita**: chi si ferma sulla casella accanto ripara metà dei danni (arrotondando a suo favore), ma non pesca.
 
 Nel file del percorso un pezzo con caratteristiche si scrive così:

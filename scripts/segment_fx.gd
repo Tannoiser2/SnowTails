@@ -38,7 +38,7 @@ static func build(parent: Node3D, c: Course) -> void:
 			parent.add_child(_band(c, pi, sl, 0.016))
 			kinds.append(sl)
 		if String(mods.get("wind", "")) != "":
-			parent.add_child(_band(c, pi, "wind", 0.018, String(mods["wind"]) == "L"))
+			parent.add_child(_band(c, pi, "wind", 0.018, String(mods["wind"]) == "L", String(mods["wind"]) in ["F", "C"]))
 			_wind(parent, c, pi)
 			kinds.append("wind")
 		if mods.get("ice", false):
@@ -70,7 +70,7 @@ static func _fan_tex(name: String) -> Texture2D:
 	return _tex[name]
 
 ## Livello trasparente steso sulla fascia delle corsie, che segue il pendio della tessera.
-static func _band(c: Course, pi: int, kind: String, y_off: float, flip := false) -> MeshInstance3D:
+static func _band(c: Course, pi: int, kind: String, y_off: float, flip := false, along := false) -> MeshInstance3D:
 	var f := frame(c, pi)
 	var st := SurfaceTool.new()
 	st.begin(Mesh.PRIMITIVE_TRIANGLES)
@@ -81,7 +81,11 @@ static func _band(c: Course, pi: int, kind: String, y_off: float, flip := false)
 			var u := float(q[0]) / nu
 			var v := float(q[1])
 			var p2: Vector2 = f["a"] + (f["b"] - f["a"]) * u + f["right"] * (v * 2.0 - 1.0) * f["half"]
-			st.set_uv(Vector2(u, 1.0 - v if flip else v))
+			if along:
+				# vento a favore o contrario: le scie corrono lungo la pista
+				st.set_uv(Vector2(v, u * 3.0))
+			else:
+				st.set_uv(Vector2(u, 1.0 - v if flip else v))
 			st.add_vertex(Vector3(p2.x * S, c.piece_height(pi, p2) + y_off, p2.y * S))
 	var mi := MeshInstance3D.new()
 	mi.mesh = st.commit()
@@ -158,7 +162,11 @@ static func _fade_ramp(peak := 1.0) -> Gradient:
 # ---------- vento ----------
 static func _wind(parent: Node3D, c: Course, pi: int) -> void:
 	var f := frame(c, pi)
-	var side := 1.0 if String(c.pieces[pi]["mods"].get("wind", "R")) != "L" else -1.0
+	var wk := String(c.pieces[pi]["mods"].get("wind", "R"))
+	var along := wk in ["F", "C"]
+	# di lato: +z a destra; lungo la pista: +x a favore (verso di marcia), −x contro
+	var side := 1.0 if wk in ["R", "F"] else -1.0
+	var force: int = Course.wind_force(c.pieces[pi]["mods"])
 	var L: float = f["len"] * BoardView3D.S
 	var W: float = f["half"] * 2.0 * BoardView3D.S
 	var root := anchor(c, pi, f["mid"], 0.0)
@@ -174,17 +182,23 @@ static func _wind(parent: Node3D, c: Course, pi: int) -> void:
 	sm.vertex_color_use_as_albedo = true
 	sm.albedo_color = Color(1, 1, 1, 0.75)
 	streak.material_override = sm
-	streak.amount = 70
+	streak.amount = 40 + 30 * force
 	streak.lifetime = 1.1
 	streak.preprocess = 2.0
 	streak.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
-	streak.emission_box_extents = Vector3(L * 0.5, 0.22, W * 0.35)
-	streak.position = Vector3(0, 0.35, -side * W * 0.45)
-	streak.direction = Vector3(0, 0, side)
+	if along:
+		bm.size = Vector3(0.55, 0.018, 0.018)
+		streak.emission_box_extents = Vector3(L * 0.3, 0.22, W * 0.5)
+		streak.position = Vector3(-side * L * 0.25, 0.35, 0)
+		streak.direction = Vector3(side, 0, 0)
+	else:
+		streak.emission_box_extents = Vector3(L * 0.5, 0.22, W * 0.35)
+		streak.position = Vector3(0, 0.35, -side * W * 0.45)
+		streak.direction = Vector3(0, 0, side)
 	streak.spread = 6.0
 	streak.gravity = Vector3.ZERO
-	streak.initial_velocity_min = 3.2
-	streak.initial_velocity_max = 4.6
+	streak.initial_velocity_min = 2.4 + 0.8 * force
+	streak.initial_velocity_max = 3.6 + 1.0 * force
 	streak.color_ramp = _fade_ramp(0.8)
 	streak.local_coords = true
 	root.add_child(streak)
@@ -194,13 +208,13 @@ static func _wind(parent: Node3D, c: Course, pi: int) -> void:
 	qm.size = Vector2(0.22, 0.22)
 	dust.mesh = qm
 	dust.material_override = _flake_mat(0.6)
-	dust.amount = 110
+	dust.amount = 60 + 40 * force
 	dust.lifetime = 2.2
 	dust.preprocess = 3.0
 	dust.emission_shape = CPUParticles3D.EMISSION_SHAPE_BOX
 	dust.emission_box_extents = Vector3(L * 0.5, 0.04, W * 0.6)
 	dust.position = Vector3(0, 0.06, 0)
-	dust.direction = Vector3(0, 0.35, side)
+	dust.direction = Vector3(side, 0.35, 0) if along else Vector3(0, 0.35, side)
 	dust.spread = 18.0
 	dust.gravity = Vector3(0, -0.4, 0)
 	dust.initial_velocity_min = 1.0
@@ -212,10 +226,15 @@ static func _wind(parent: Node3D, c: Course, pi: int) -> void:
 	root.add_child(dust)
 	# manica a vento sul lato da cui soffia, gonfia e svolazzante verso dove va il vento
 	var at: Vector2 = f["mid"] + f["dir"] * f["len"] * 0.3 - f["right"] * side * (f["half"] + c.lane_w * 1.1)
+	if along:
+		at = f["mid"] - f["dir"] * f["len"] * 0.3 + f["right"] * (f["half"] + c.lane_w * 1.1)
 	var holder := anchor(c, pi, at, 0.0)
 	parent.add_child(holder)
 	var sock := Windsock.new()
-	sock.side = side
+	sock.side = 1.0 if along else side
+	if along:
+		# la manica punta lungo la pista: avanti col vento a favore, indietro col contrario
+		sock.rotation.y = PI * 0.5 * side
 	sock.scale = Vector3.ONE * 1.6
 	holder.add_child(sock)
 

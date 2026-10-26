@@ -1094,9 +1094,9 @@ Tastiera: 1–5 sceglie una carta; A, S, D (o frecce) la mettono su cane sinistr
 		c2.add_child(UIKit.heading("Segmenti fanmade"))
 		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_up.png", 64, 64), "Salita", "Chi parte da una tessera in salita ha %d punti di velocità in meno, come un freno in più (non si va sotto zero)." % SledGame.UP_LOSS))
 		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_down.png", 64, 64), "Discesa", "Chi parte da una tessera in discesa guadagna 1 punto di velocità ogni %d: a 3 va a 4, a 6 va a 8, a 9 va a 12." % SledGame.DOWN_PER))
-		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_fresh.png", 64, 64), "Neve fresca", "Ogni casella coi cumuli costa 2 punti di movimento; la prima slitta che ci passa la spazza via."))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_fresh.png", 64, 64), "Neve fresca", "Ogni casella coi cumuli costa 2 punti di movimento; la prima slitta che ci passa la spazza via. I cumuli cambiano posto a ogni gara."))
 		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_ice.png", 64, 64), "Ghiaccio", "Chi entra derivando continua a derivare finché è sul ghiaccio; a fine movimento scivola avanti di una casella."))
-		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_wind.png", 64, 64), "Vento", "Chi parte da una tessera col vento ha 1 di deriva in più nel verso della manica a vento: si somma a quella dei cani (o la riduce, se va dall'altra parte). Il bonus di equilibrio vale solo se la deriva totale è zero."))
+		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_wind.png", 64, 64), "Vento", "La forza è 1, 2 o 3 (a volte tirata a sorte a inizio gara). Vento di lato: chi parte dalla tessera ha tanta deriva in più nel verso della manica a vento, sommata a quella dei cani (o tolta, se va dall'altra parte); il bonus di equilibrio vale solo con deriva totale zero. Vento a favore: tanta velocità in più; vento contrario: tanta in meno."))
 		c2.add_child(_rule_item(_rule_img("res://assets/fan/sign_hut.png", 64, 64), "Baita", "Chi si ferma sulla casella accanto alla baita ripara metà delle ammaccature (arrotondando a suo favore), ma non pesca."))
 		c2.add_child(_rule_item(_rule_img("res://assets/rules/fork_sign.png", 64, 64), "Bivio", "Un'isola di abeti divide la pista in due rami con un numero diverso di caselle: da una parte neve fresca, dall'altra alberelli."))
 	else:
@@ -1123,7 +1123,7 @@ func start_game() -> void:
 	var def := _menu_course_def()
 	if def.is_empty():
 		return
-	_begin_race(def, _seat_flags(), 0)
+	_begin_race(Course.randomize_def(def), _seat_flags(), 0)
 
 ## Gran Tour: corre la pista numero tour.i con le stesse slitte.
 func _tour_race() -> void:
@@ -1131,7 +1131,7 @@ func _tour_race() -> void:
 	if not d is Dictionary:
 		_toast("Percorso non valido")
 		return
-	_begin_race(d, tour["flags"], 0)
+	_begin_race(Course.randomize_def(d), tour["flags"], 0)
 	game.log_text = "Gran Tour, gara %d di %d: [b]%s[/b]." % [int(tour["i"]) + 1, tour["files"].size(), course.title]
 	_refresh()
 
@@ -2396,7 +2396,12 @@ func _stat_grid() -> Control:
 	top.add_theme_constant_override("separation", 5)
 	col.add_child(top)
 	var sl := course.slope_of(cur.cell)
-	top.add_child(_tile("Velocità" + (" (salita)" if sl == "up" else (" (discesa)" if sl == "down" else "")), str(speed)))
+	var why := []
+	if sl != "":
+		why.append("salita" if sl == "up" else "discesa")
+	if course.wind_speed_of(cur.cell) != 0:
+		why.append("vento")
+	top.add_child(_tile("Velocità" + (" (%s)" % ", ".join(why) if not why.is_empty() else ""), str(speed)))
 	top.add_child(_tile("Deriva" + (" (vento)" if course.wind_of(cur.cell) != 0 else ""), "0" if d == 0 else "%d %s" % [min(abs(d), speed), "→" if d > 0 else "←"]))
 	var bonus := "—"
 	if d == 0 and m["L"] == m["R"] and cur.moves > 0 and speed > 0:
@@ -2419,8 +2424,10 @@ func _stat_grid() -> Control:
 	if not sg.is_empty():
 		var when := "qui" if int(sg["dist"]) == 0 else "fra %d" % int(sg["dist"])
 		for ft in sg["feats"]:
+			var wf := absi(course.wind_of(int(sg["cell"]))) + absi(course.wind_speed_of(int(sg["cell"])))
 			var it: Array = {"up": ["Salita: −%d velocità" % SledGame.UP_LOSS], "down": ["Discesa: +1 ogni %d" % SledGame.DOWN_PER],
-				"windR": ["Vento: deriva +1 →"], "windL": ["Vento: deriva +1 ←"], "ice": ["Ghiaccio: si scivola"],
+				"windR": ["Vento: deriva +%d →" % wf], "windL": ["Vento: deriva +%d ←" % wf],
+				"windF": ["Vento a favore: +%d velocità" % wf], "windC": ["Vento contrario: −%d velocità" % wf], "ice": ["Ghiaccio: si scivola"],
 				"fresh": ["Neve fresca: costa 2"], "hut": ["Baita: ripara metà"], "fork": ["Bivio: scegli il ramo"]}.get(ft, [ft])
 			rows.append([it[0], when, false])
 	for r in rows.slice(0, 2):
@@ -2454,13 +2461,16 @@ func _seg_ahead(start: int, n: int) -> Dictionary:
 		var w := course.wind_of(id)
 		if w != 0:
 			feats.append("windR" if w > 0 else "windL")
+		var wsp := course.wind_speed_of(id)
+		if wsp != 0:
+			feats.append("windF" if wsp > 0 else "windC")
 		for key in ["ice", "fresh", "hut"]:
 			if course.has_mod(id, key):
 				feats.append(key)
 		if String(course.pieces[int(course.cells[id]["piece"])]["face"].get("type", "")) == "fork":
 			feats.append("fork")
 		if not feats.is_empty():
-			return {"feats": feats, "dist": k}
+			return {"feats": feats, "dist": k, "cell": id}
 		var fw: Array = course.cells[id]["fwd"]
 		if fw.is_empty():
 			break
@@ -3261,8 +3271,8 @@ func _online_lobby_poll(code: String) -> void:
 ## Chi ha creato la stanza avvia la gara: percorso, seme e slitte valgono per tutti.
 func _online_start() -> void:
 	var code: String = online["code"]
-	var def := _menu_course_def()
-	if def.is_empty():
+	var def := Course.randomize_def(_menu_course_def())
+	if (def.get("pieces", []) as Array).is_empty():
 		_on_text("Scegli un percorso valido.")
 		return
 	var room := await net.room(code)

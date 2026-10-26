@@ -180,7 +180,8 @@ func _random_mods(high: bool, near_end: bool, can_climb: bool) -> Dictionary:
 	elif not high and can_climb and rng.randf() < 0.3:
 		m["slope"] = "up"
 	if rng.randf() < 0.3:
-		m["wind"] = "L" if rng.randf() < 0.5 else "R"
+		m["wind"] = ["L", "R", "F", "C"][rng.randi() % 4]
+		m["wind_force"] = rng.randi_range(1, 3)
 	if rng.randf() < 0.2:
 		m["ice"] = true
 	if rng.randf() < 0.25:
