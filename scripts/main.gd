@@ -401,7 +401,7 @@ var _tour_sel_init := false
 var tour := {}                 # Gran Tour in corso: files, i, flags, tot, races, names
 var _menu_tour_box: ScrollContainer
 var _del_armed := ""
-const MENU_TAB_H := 270.0      # altezza fissa delle schede: la finestra non cambia misura
+var MENU_TAB_H := 270.0        # altezza fissa delle schede: la finestra non cambia misura
 
 ## Numero di slitte in gara (i colori non su «no»).
 var setup_n: int:
@@ -452,6 +452,9 @@ func show_menu() -> void:
 	_menu_tab_box = VBoxContainer.new()
 	_menu_tab_box.add_theme_constant_override("separation", 8)
 	_menu_tab_box.custom_minimum_size = Vector2(0, MENU_TAB_H)
+	# la scheda prende lo spazio che avanza (la colonna di destra è più alta): lista più lunga,
+	# anteprima in fondo
+	_menu_tab_box.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	left.add_child(_menu_tab_box)
 	_menu_random_box = VBoxContainer.new()
 	_menu_random_box.add_theme_constant_override("separation", 8)
@@ -577,6 +580,7 @@ func _list_scroll(h: float) -> Array:
 	var sc := ScrollContainer.new()
 	sc.horizontal_scroll_mode = ScrollContainer.SCROLL_MODE_DISABLED
 	sc.custom_minimum_size = Vector2(0, h)
+	sc.size_flags_vertical = Control.SIZE_EXPAND_FILL
 	var vb := VBoxContainer.new()
 	vb.add_theme_constant_override("separation", 6)
 	vb.size_flags_horizontal = Control.SIZE_EXPAND_FILL
