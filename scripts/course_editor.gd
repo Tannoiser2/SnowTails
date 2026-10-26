@@ -5,6 +5,7 @@ extends Control
 ## caratteristiche fanmade: pendenza, vento, ghiaccio, neve fresca, baita.
 
 const USER_DIR := "user://courses/"
+var _net: Net = null
 static var start_from := ""          # percorso da cui partire (impostato dal menu)
 
 const PALETTE := [
@@ -399,7 +400,8 @@ func _save() -> void:
 	if nm == "":
 		status.text = "[color=#c93636]Dai un nome al percorso.[/color]"
 		return
-	var def := {"name": nm, "note": "Percorso creato con l'editor.", "pieces": pieces.duplicate(true)}
+	var def := {"name": nm, "note": "Percorso creato con l'editor.", "pieces": pieces.duplicate(true),
+		"saved_at": Time.get_datetime_string_from_system(true)}
 	var c := Course.new()
 	if not c.build(def):
 		status.text = "[color=#c93636]Non si può salvare: %s[/color]" % c.error
@@ -423,5 +425,12 @@ func _save() -> void:
 	f.store_string(JSON.stringify(def, " "))
 	f.close()
 	status.text = "Salvato: «%s». Lo trovi nel menu dei percorsi con il simbolo ✎." % nm
+	if _net == null:
+		_net = Net.new()
+		add_child(_net)
+	if CourseLibrary.linked(_net):
+		status.text += "\nCarico nella libreria online…"
+		var ok := await CourseLibrary.upload(_net, clean, def)
+		status.text = status.text.replace("Carico nella libreria online…", "Salvato anche nella libreria online." if ok else "[color=#c93636]Libreria online non raggiungibile: la pista è salvata qui e si caricherà alla prossima sincronizzazione.[/color]")
 	if not _bad.is_empty():
 		status.text += "\n[color=#c9900f]Attenzione: alcuni pezzi si sovrappongono.[/color]"

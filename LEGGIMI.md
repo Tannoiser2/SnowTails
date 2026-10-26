@@ -46,6 +46,13 @@ l'indirizzo `…/SnowTails/?r=CODICE`. Il telefono che lo apre va dritto alla sc
 `tests/table_play.gd` prova schermo + due telefoni sul finto Firebase (`ST_SIM=1` per il simultaneo,
 `ST_PHASE=drop` per un telefono che se ne va a metà).
 
+**Libreria online delle piste.** Nella scheda Editor, «Libreria online»: con una parola segreta
+le piste create con l'editor si salvano anche su Firebase (`snowtails/library/<chiave>`, la chiave è
+l'impronta SHA-256 della parola) e si ritrovano su ogni dispositivo dove la si inserisce. Si
+sincronizza all'apertura del gioco, a ogni salvataggio nell'editor e a ogni cancellazione
+(le piste cancellate restano come «lapide» perché spariscano anche altrove). Serve la regola
+`snowtails/library` di `firebase/database.rules.json`. Prova: `tests/library_sync.gd` (passi a, b, c).
+
 ## Icona
 L'icona dell'app (il muso dell'husky dalla copertina) è in `assets/icon/`:
 - `icona.png` (1024×1024): icona del progetto, già impostata; va bene anche per macOS e per

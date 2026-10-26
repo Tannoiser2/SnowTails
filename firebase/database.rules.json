@@ -79,6 +79,16 @@
             ".validate": false
           }
         }
+      },
+      "library": {
+        "$key": {
+          ".read": "auth != null",
+          ".validate": "$key.length >= 16 && $key.length <= 64",
+          "$tid": {
+            ".write": "auth != null",
+            ".validate": "!newData.exists() || (newData.hasChild('name') && newData.child('name').isString() && newData.child('name').val().length <= 80 && (newData.child('deleted').val() === true || (newData.child('def').isString() && newData.child('def').val().length < 200000)))"
+          }
+        }
       }
     },
     "status": {

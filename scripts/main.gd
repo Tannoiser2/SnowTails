@@ -78,6 +78,7 @@ func _ready() -> void:
 	_build_hud()
 	_scan_courses()
 	show_menu()
+	_library_autosync()
 	# telefono aperto dal QR dello schermo condiviso: indirizzo con ?r=CODICE
 	var rc := OS.get_environment("ST_JOIN")
 	if OS.has_feature("web"):
@@ -644,7 +645,7 @@ func _menu_build_tab() -> void:
 		var lt := UIKit.label("Le tue piste", 18, UIKit.MUTED)
 		lt.custom_minimum_size = Vector2(0, 22)
 		_menu_tab_box.add_child(lt)
-		var l := _list_scroll(MENU_TAB_H - 50 - 22 - 16 - 12)
+		var l := _list_scroll(MENU_TAB_H - 50 - 22 - 16 - 12 - 54)
 		var vb: VBoxContainer = l[1]
 		var n := 0
 		for i in course_files.size():
@@ -679,6 +680,71 @@ func _menu_build_tab() -> void:
 		if n == 0:
 			vb.add_child(UIKit.label("Non hai ancora creato piste. Premi «Crea percorso».", 17, UIKit.MUTED))
 		_menu_tab_box.add_child(l[0])
+		var lw := CourseLibrary.word(_net())
+		var blib := UIKit.button("Libreria online: " + ("collegata, sincronizza" if lw != "" else "non collegata"))
+		blib.custom_minimum_size = Vector2(0, 46)
+		blib.pressed.connect(_library_dialog)
+		_menu_tab_box.add_child(blib)
+
+## Libreria online delle piste: parola segreta, sincronizzazione.
+func _library_dialog() -> void:
+	var vb := VBoxContainer.new()
+	vb.add_theme_constant_override("separation", 12)
+	vb.add_child(UIKit.title("Libreria online", 44))
+	vb.add_child(UIKit.label("Le piste che crei con l'editor si salvano anche online. Scegli una parola segreta: su ogni dispositivo (computer, iPad, telefono) dove la scrivi ritrovi le stesse piste. Chi non la conosce non le vede.", 18, UIKit.MUTED))
+	var le := _line_edit("parola segreta", 40)
+	le.text = CourseLibrary.word(_net())
+	vb.add_child(le)
+	var info := UIKit.label("", 18, UIKit.INK)
+	vb.add_child(info)
+	var row := HBoxContainer.new()
+	row.add_theme_constant_override("separation", 10)
+	var bx := UIKit.button("Chiudi")
+	bx.pressed.connect(show_menu)
+	row.add_child(bx)
+	if CourseLibrary.linked(net):
+		var bu := UIKit.button("Scollega")
+		bu.pressed.connect(func():
+			CourseLibrary.set_word(net, "")
+			show_menu())
+		row.add_child(bu)
+	var bs := UIKit.cta("Collega e sincronizza")
+	bs.pressed.connect(func():
+		var w := le.text.strip_edges()
+		if w.length() < 6:
+			info.text = "Usa almeno 6 caratteri (meglio una frase che sai solo tu)."
+			return
+		CourseLibrary.set_word(net, w)
+		info.text = "Sincronizzo…"
+		var r := await CourseLibrary.sync(net)
+		if not is_instance_valid(info):
+			return
+		info.text = _library_text(r))
+	row.add_child(bs)
+	vb.add_child(row)
+	_modal(vb, 640, true)
+
+func _library_text(r: Dictionary) -> String:
+	if not r.get("ok", false):
+		return "Non riesco a raggiungere la libreria: %s" % r.get("error", "")
+	return "Libreria sincronizzata: %d scaricate, %d caricate, %d tolte." % [r["down"], r["up"], r["gone"]]
+
+## All'apertura del menu le piste online si allineano in sottofondo.
+var _lib_synced := false
+func _library_autosync() -> void:
+	if _lib_synced or not CourseLibrary.linked(_net()):
+		return
+	_lib_synced = true
+	var r := await CourseLibrary.sync(net)
+	if r.get("ok", false) and (int(r["down"]) > 0 or int(r["gone"]) > 0):
+		var cur_path := String(course_files[course_idx]) if course_idx < course_files.size() else ""
+		_scan_courses()
+		var k := course_files.find(cur_path)
+		if k >= 0:
+			course_idx = k
+		if phase == "menu" and _menu_tab_box != null and is_instance_valid(_menu_tab_box) and _menu_tab_box.is_inside_tree():
+			_menu_build_tab()
+			_menu_refresh_info()
 
 ## Porta in vista la pista scelta quando la lista è già impaginata.
 func _scroll_to(sc: ScrollContainer, c: Control) -> void:
@@ -698,6 +764,8 @@ func _menu_delete(path: String) -> void:
 	_del_armed = ""
 	var cur_path := String(course_files[course_idx]) if course_idx < course_files.size() else ""
 	DirAccess.remove_absolute(path)
+	if CourseLibrary.linked(_net()):
+		CourseLibrary.remove(net, path.get_file().get_basename())
 	_scan_courses()
 	var k := course_files.find(cur_path)
 	if k >= 0:

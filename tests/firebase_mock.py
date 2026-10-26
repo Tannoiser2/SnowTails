@@ -70,6 +70,9 @@ def firebase_json(v):
 def allowed(uid, path, new, new_host=None):
     """Regole semplificate. path: lista di segmenti. new_host: host scritto nello stesso aggiornamento
     (come newData.parent() nelle regole vere)."""
+    if path[:2] == ["snowtails", "library"]:
+        # libreria delle piste: chiunque sia autenticato scrive una pista per volta
+        return len(path) == 4 and len(path[2]) >= 16
     if path[:2] != ["snowtails", "rooms"] or len(path) < 3:
         return False
     path = path[1:]
@@ -148,7 +151,7 @@ class H(BaseHTTPRequestHandler):
             return self._send(401, {"error": "Permission denied"})
         with LOCK:
             if method == "GET":
-                if path[:2] == ["snowtails", "rooms"] and len(path) < 3:
+                if path[:2] in (["snowtails", "rooms"], ["snowtails", "library"]) and len(path) < 3:
                     return self._send(401, {"error": "Permission denied"})
                 return self._send(200, firebase_json(get_node(path)))
             if method == "DELETE":
